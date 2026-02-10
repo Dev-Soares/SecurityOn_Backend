@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   InternalServerErrorException,
@@ -7,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma, User } from 'src/generated/prisma/client';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateUserDto } from './dto/create-user.dto';
 
 @Injectable()
 export class UserService {
@@ -14,7 +15,11 @@ export class UserService {
 
   async create(data: Prisma.UserCreateInput): Promise<User> {
     try {
-      return await this.prisma.user.create({ data });
+      return await this.prisma.user.create({ data: {
+        name: data.name,
+        email: data.email,
+        password: data.password,
+      } });
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -43,11 +48,13 @@ export class UserService {
     return user;
   }
 
-  async update(id: number, dataInput: Prisma.UserUpdateInput): Promise<User> {
+  async update(id: string, dto: UpdateUserDto): Promise<User> {
     try {
       return this.prisma.user.update({
         where: { id },
-        data: dataInput,
+        data:{
+          name: dto.name,         
+        },
       });
     } catch (error) {
       if (
@@ -62,7 +69,7 @@ export class UserService {
     }
   }
 
-  async remove(id: number): Promise<User> {
+  async remove(id: string): Promise<User> {
     try {
       return this.prisma.user.delete({
         where: { id },
