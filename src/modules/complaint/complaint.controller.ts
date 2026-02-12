@@ -19,16 +19,16 @@ export class ComplaintController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.complaintService.findOne(+id);
+    return this.complaintService.findOne(id);
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateComplaintDto: UpdateComplaintDto) {
-    return this.complaintService.update(+id, updateComplaintDto);
+    return this.complaintService.update(id, updateComplaintDto);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.complaintService.remove(+id);
+    return this.complaintService.remove(id);
   }
 }
