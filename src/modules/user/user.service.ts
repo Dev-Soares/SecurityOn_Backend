@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { Prisma, User } from '../../generated/prisma/client';
+import { Prisma, User } from '@prisma/client';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { HashService } from '../../utils/hash/hash.service'
 
@@ -41,7 +41,8 @@ export class UserService {
   }
 
   async findOne(uniqueInput: Prisma.UserWhereUniqueInput): Promise<User> {
-    const user = await this.prisma.user.findUnique({
+    try {
+      const user = await this.prisma.user.findUnique({
       where: uniqueInput,
     });
 
@@ -50,6 +51,11 @@ export class UserService {
     }
 
     return user;
+
+    } catch (error) {
+      throw new InternalServerErrorException('Erro ao buscar usuário');
+    }
+    
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<User> {

@@ -2,7 +2,7 @@ import { Injectable, InternalServerErrorException, NotFoundException } from '@ne
 import { PrismaService } from '../database/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
-import { Post, Prisma } from '../../generated/prisma/client';
+import { Post, Prisma } from '@prisma/client';
 
 @Injectable()
 export class PostService {

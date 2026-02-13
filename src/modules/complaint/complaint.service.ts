@@ -1,30 +1,32 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException,
+   InternalServerErrorException, ConflictException } from '@nestjs/common';
 import { CreateComplaintDto } from './dto/create-complaint.dto';
 import { UpdateComplaintDto } from './dto/update-complaint.dto';
 import { PrismaService } from '../database/prisma.service';
-import { Prisma, Complaint } from '../../generated/prisma/client';
-import { InternalServerErrorException } from '@nestjs/common';
+import { Prisma, Complaint } from '@prisma/client';
+
 
 @Injectable()
 export class ComplaintService {
-
   constructor(private readonly prisma: PrismaService) {}
 
   create(createComplaintDto: CreateComplaintDto): Promise<Complaint> {
-    try{
+    try {
       return this.prisma.complaint.create({
         data: {
           content: createComplaintDto.content,
           userId: createComplaintDto.userId,
         },
       });
-    } catch (error){
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new Error('Complaint já cadastrado');
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('Complaint já cadastrado');
       }
       throw new InternalServerErrorException('Erro ao fazer Denúncia');
-
-    } 
+    }
   }
 
   async findAll(): Promise<Complaint[]> {
@@ -43,14 +45,20 @@ export class ComplaintService {
 
       return complaint;
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException('Denúncia não encontrada');
       }
       throw new InternalServerErrorException('Erro ao buscar Denúncia');
-    } 
+    }
   }
 
-  async update(id: string, updateComplaintDto: UpdateComplaintDto): Promise<Complaint> {
+  async update(
+    id: string,
+    updateComplaintDto: UpdateComplaintDto,
+  ): Promise<Complaint> {
     try {
       return await this.prisma.complaint.update({
         where: { id },
@@ -59,7 +67,10 @@ export class ComplaintService {
         },
       });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException('Denúncia não encontrada');
       }
       throw new InternalServerErrorException('Erro ao atualizar Denúncia');
@@ -72,7 +83,10 @@ export class ComplaintService {
         where: { id },
       });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException('Denúncia não encontrada');
       }
       throw new InternalServerErrorException('Erro ao deletar Denúncia');
