@@ -1,9 +1,10 @@
+import { IsString } from "class-validator";
+
 export class CreateComplaintDto {
+
+    @IsString()
     content: string;
-    authorId: string;
-    author: {
-        id: string;
-        name: string;
-        email: string;
-    }
+
+    @IsString()
+    userId: string;
 }

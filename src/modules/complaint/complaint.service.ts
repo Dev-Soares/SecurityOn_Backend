@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateComplaintDto } from './dto/create-complaint.dto';
 import { UpdateComplaintDto } from './dto/update-complaint.dto';
 import { PrismaService } from '../database/prisma.service';
-import { Prisma, Complaint } from 'src/generated/prisma/client';
+import { Prisma, Complaint } from '../../generated/prisma/client';
 import { InternalServerErrorException } from '@nestjs/common';
 
 @Injectable()
@@ -15,10 +15,7 @@ export class ComplaintService {
       return this.prisma.complaint.create({
         data: {
           content: createComplaintDto.content,
-          authorID: createComplaintDto.authorId,
-          author: {
-            connect: { id: createComplaintDto.authorId }
-          }
+          userId: createComplaintDto.userId,
         },
       });
     } catch (error){
@@ -38,17 +35,19 @@ export class ComplaintService {
     }
   }
 
-  async findOne(id: string): Promise<Complaint> {
+  async findOne(id: string): Promise<Complaint | null> {
     try {
-      return await this.prisma.complaint.findUnique({
-        where: { id }
+      const complaint = await this.prisma.complaint.findUnique({
+        where: { id: id },
       });
+
+      return complaint;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new NotFoundException('Denúncia não encontrada');
       }
       throw new InternalServerErrorException('Erro ao buscar Denúncia');
-    }
+    } 
   }
 
   async update(id: string, updateComplaintDto: UpdateComplaintDto): Promise<Complaint> {

@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { Prisma, User } from 'src/generated/prisma/client';
+import { Prisma, User } from '../../generated/prisma/client';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { HashService } from '../../utils/hash/hash.service'
 

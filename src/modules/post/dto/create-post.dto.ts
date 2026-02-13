@@ -5,7 +5,7 @@ export class CreatePostDto {
     content: string;
 
     @IsString()
-    authorId: string;
+    userId: string;
 
     @IsOptional()
     @IsString()
