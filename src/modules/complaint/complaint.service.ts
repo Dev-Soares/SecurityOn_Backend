@@ -37,20 +37,21 @@ export class ComplaintService {
     }
   }
 
-  async findOne(id: string): Promise<Complaint | null> {
+  async findOne(id: string): Promise<Complaint> {
     try {
       const complaint = await this.prisma.complaint.findUnique({
         where: { id: id },
       });
 
-      return complaint;
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2025'
-      ) {
+      if (!complaint) {
         throw new NotFoundException('Denúncia não encontrada');
       }
+
+      return complaint;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+      throw error;  // ✅ Relança NotFoundException
+    }
       throw new InternalServerErrorException('Erro ao buscar Denúncia');
     }
   }

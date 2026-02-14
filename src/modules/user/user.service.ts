@@ -25,13 +25,13 @@ export class UserService {
         password: hashedPassword
       } });
     } catch (error) {
+      console.log(error);
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
         throw new ConflictException('E-mail já cadastrado');
       }
-
       throw new InternalServerErrorException('Erro ao criar usuário');
     }
   }
@@ -53,6 +53,10 @@ export class UserService {
     return user;
 
     } catch (error) {
+      
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
       throw new InternalServerErrorException('Erro ao buscar usuário');
     }
     
