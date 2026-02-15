@@ -1,28 +1,30 @@
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { Prisma, User } from 'src/generated/prisma/client';
+import { Prisma, User } from '@prisma/client';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { HashService } from '../../common/hash/hash.service'
 
 @Injectable()
 export class UserService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hashService: HashService,
+   ) {}
 
   async create(data: Prisma.UserCreateInput): Promise<User> {
+    const hashedPassword = await this.hashService.hashPassword(data.password);
     try {
-      return await this.prisma.user.create({ data });
+      return await this.prisma.user.create({ data: {
+        name: data.name,
+        email: data.email,
+        password: hashedPassword
+      } });
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new ConflictException('E-mail já cadastrado');
-      }
-
       throw new InternalServerErrorException('Erro ao criar usuário');
     }
   }
@@ -32,7 +34,8 @@ export class UserService {
   }
 
   async findOne(uniqueInput: Prisma.UserWhereUniqueInput): Promise<User> {
-    const user = await this.prisma.user.findUnique({
+    try {
+      const user = await this.prisma.user.findUnique({
       where: uniqueInput,
     });
 
@@ -41,13 +44,24 @@ export class UserService {
     }
 
     return user;
+
+    } catch (error) {
+      
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Erro ao buscar usuário');
+    }
+    
   }
 
-  async update(id: number, dataInput: Prisma.UserUpdateInput): Promise<User> {
+  async update(id: string, dto: UpdateUserDto): Promise<User> {
     try {
       return this.prisma.user.update({
         where: { id },
-        data: dataInput,
+        data:{
+          name: dto.name,         
+        },
       });
     } catch (error) {
       if (
@@ -62,7 +76,7 @@ export class UserService {
     }
   }
 
-  async remove(id: number): Promise<User> {
+  async remove(id: string): Promise<User> {
     try {
       return this.prisma.user.delete({
         where: { id },
