@@ -21,7 +21,7 @@ export class AuthService {
   ): Promise<{ access_token: string }> {
     const user = await this.usersService.findOne({ email: email });
 
-    if (!user) throw new NotFoundException('Usuário não encontrado');
+    if (!user) throw new NotFoundException('E-mail ou senha inválidos');
 
     const passwordValid = await this.hashService.comparePassword(
       password,

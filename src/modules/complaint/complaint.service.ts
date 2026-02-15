@@ -19,12 +19,6 @@ export class ComplaintService {
         },
       });
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new ConflictException('Complaint já cadastrado');
-      }
       throw new InternalServerErrorException('Erro ao fazer Denúncia');
     }
   }
