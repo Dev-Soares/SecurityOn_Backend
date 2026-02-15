@@ -18,9 +18,6 @@ export class PostService {
         },
       });
     } catch(error){
-      if( error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' ){
-        throw new Error('Post já cadastrado');
-      }
       throw new InternalServerErrorException('Erro ao criar post');
     }
   }
