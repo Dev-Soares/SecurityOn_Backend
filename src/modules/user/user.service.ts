@@ -7,7 +7,7 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { Prisma, User } from '@prisma/client';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { HashService } from '../../utils/hash/hash.service'
+import { HashService } from '../../common/hash/hash.service'
 
 @Injectable()
 export class UserService {

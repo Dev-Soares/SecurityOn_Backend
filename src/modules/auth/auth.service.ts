@@ -1,6 +1,6 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { UserService } from '../user/user.service';
-import { HashService } from 'src/utils/hash/hash.service';
+import { HashService } from 'src/common/hash/hash.service';
 import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
@@ -17,7 +17,7 @@ export class AuthService {
   ): Promise<{ access_token: string }> {
     const user = await this.usersService.findOne({ email: email });
 
-    if (!user) throw new UnauthorizedException('E-mail ou senha inválidos');
+    if (!user) throw new NotFoundException('Usuário não encontrado');
 
     const passwordValid = await this.hashService.comparePassword(
       password,
@@ -27,7 +27,7 @@ export class AuthService {
     if (!passwordValid) {
       throw new UnauthorizedException('E-mail ou senha inválidos');
     }
-    const payload = { sub: user.id, email: user.email };
+    const payload = { sub: user.id, email: user.email, name: user.name };
 
     const token = await this.jwtService.signAsync(payload);
 
