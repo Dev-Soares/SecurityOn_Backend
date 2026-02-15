@@ -25,7 +25,6 @@ export class UserService {
         password: hashedPassword
       } });
     } catch (error) {
-      console.log(error);
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
