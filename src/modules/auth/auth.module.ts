@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { UserModule } from '../user/user.module';
@@ -9,9 +10,13 @@ import { HashModule } from '../../common/hash/hash.module';
   imports: [
     UserModule,
     HashModule,
-    JwtModule.register({
-      secret: process.env.JWT_SECRET,  // ✅ Configure no .env
-      signOptions: { expiresIn: '24h' },
+    JwtModule.registerAsync({
+      global: true,
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.get<string>('JWT_SECRET'),
+        signOptions: { expiresIn: '6h' },
+      }),
     }),
   ],
   controllers: [AuthController],

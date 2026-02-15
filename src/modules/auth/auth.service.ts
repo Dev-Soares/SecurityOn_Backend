@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { UserService } from '../user/user.service';
 import { HashService } from 'src/common/hash/hash.service';
 import { JwtService } from '@nestjs/jwt';
@@ -27,6 +31,7 @@ export class AuthService {
     if (!passwordValid) {
       throw new UnauthorizedException('E-mail ou senha inválidos');
     }
+
     const payload = { sub: user.id, email: user.email, name: user.name };
 
     const token = await this.jwtService.signAsync(payload);

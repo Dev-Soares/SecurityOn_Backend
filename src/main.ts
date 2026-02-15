@@ -17,7 +17,11 @@ async function bootstrap() {
     .addTag('securityon')
     .build();
   
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api-docs', app, document);
+
   await app.listen(PORT);
+  
   console.log(`API running on port ${PORT}`)
 }
 bootstrap();
