@@ -33,6 +33,12 @@ export class UserService {
         },
       });
     } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('E-mail já cadastrado');
+      }
       throw new InternalServerErrorException('Erro ao criar usuário');
     }
   }

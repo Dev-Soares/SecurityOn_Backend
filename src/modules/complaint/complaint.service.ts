@@ -28,6 +28,7 @@ export class ComplaintService {
   async findAll(dto: GetComplaintDto): Promise<ComplaintQuery> {
 
     const take = Number(dto.limit) || 6;
+    if (take >= 100) throw new InternalServerErrorException('O limite máximo é 100')
     try {
       const searchedComplaints = await this.prisma.complaint.findMany({
         take: take + 1,

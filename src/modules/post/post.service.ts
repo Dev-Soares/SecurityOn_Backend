@@ -28,6 +28,8 @@ export class PostService {
 
     const take = Number(dto.limit) || 10;
 
+    if(take>=100) throw new InternalServerErrorException('O limite máximo é 100');
+
     try{
       const searchedPosts = await this.prisma.post.findMany({
         take: take + 1,
