@@ -6,10 +6,6 @@ export class CreatePostDto {
     @IsString()
     content: string;
 
-    @ApiProperty({ example: 'user-uuid-here' })
-    @IsString()
-    userId: string;
-
     @ApiPropertyOptional({ example: 'https://example.com/image.png' })
     @IsOptional()
     @IsString()
