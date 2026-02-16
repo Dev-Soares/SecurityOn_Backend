@@ -1,33 +1,52 @@
-import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { Post, Prisma } from '@prisma/client';
+import { GetPostDto } from './dto/get-post.dto';
+import { PostQuery } from 'src/common/types/query-types';
 
 @Injectable()
 export class PostService {
   constructor (private readonly prisma: PrismaService) {}
 
-  async create(dto: CreatePostDto): Promise<Post> {
+  async create(dto: CreatePostDto, userId: string): Promise<Post> {
     try{
       return await this.prisma.post.create({
         data: {
           content: dto.content,
-          userId: dto.userId,
+          userId: userId,
           imgUrl: dto.imgUrl,
         },
       });
     } catch(error){
-      if( error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' ){
-        throw new Error('Post já cadastrado');
-      }
       throw new InternalServerErrorException('Erro ao criar post');
     }
   }
 
-  async findAll(): Promise<Post[]> {
+  async findAll(dto: GetPostDto): Promise<PostQuery> {
+
+    const take = Number(dto.limit) || 10;
+
+    if(take>=100) throw new InternalServerErrorException('O limite máximo é 100');
+
     try{
-      return await this.prisma.post.findMany();
+      const searchedPosts = await this.prisma.post.findMany({
+        take: take + 1,
+        cursor: dto.cursor ? { id: dto.cursor } : undefined,
+        skip: dto.cursor ? 1 : 0,
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const hasNextPage = searchedPosts.length > take;
+      const posts = hasNextPage ? searchedPosts.slice(0, -1) : searchedPosts;
+      const finalItem = posts[posts.length - 1];
+
+      return {
+        data: posts,
+        nextCursor: hasNextPage ? finalItem.id : null,
+        hasNextPage: hasNextPage
+      };
     } catch (error){
       throw new InternalServerErrorException('Erro ao buscar posts');
     }
@@ -44,12 +63,24 @@ export class PostService {
       return post;
     } catch(error){
       if (error instanceof NotFoundException) throw error;
-      throw new NotFoundException('Erro ao buscar post');
+      throw new InternalServerErrorException('Erro ao buscar post');
     }
   }
 
-  async update(id: string, dto: UpdatePostDto): Promise<Post> {
+  async update(id: string, dto: UpdatePostDto, userId: string): Promise<Post> {
     try{
+      const post = await this.prisma.post.findUnique({
+        where: { id },
+      });
+
+      if (!post) {
+        throw new NotFoundException('Post não encontrado');
+      }
+
+      if (post.userId !== userId) {
+        throw new UnauthorizedException('Você não tem permissão para atualizar este post');
+      }
+
       return await this.prisma.post.update({
         where: { id },
         data: {
@@ -58,25 +89,37 @@ export class PostService {
         },
       });
     } catch(error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new NotFoundException('Post não encontrado');
-      } else {
-        throw new InternalServerErrorException('Erro ao atualizar post');
-      }
+      if (error instanceof NotFoundException) throw error;
+      if (error instanceof UnauthorizedException) throw error;
+      throw new InternalServerErrorException('Erro ao atualizar post');
     }
   }
 
-  async remove(id: string): Promise<Post> {
+  async remove(id: string, userId: string): Promise<Post> {
     try {
+
+      const post = await this.prisma.post.findUnique({
+        where: { id },
+      });
+
+      if (!post) {
+        throw new NotFoundException('Post não encontrado');
+      }
+
+      if(post?.userId !== userId) {
+        throw new UnauthorizedException('Você não tem permissão para deletar este post');
+      }
+
       return await this.prisma.post.delete({
         where: { id },
       });
     } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
+      if (error instanceof NotFoundException) throw error;
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new NotFoundException('Post não encontrado');
-      } else {
-        throw new InternalServerErrorException('Erro ao deletar post');
       }
+      throw new InternalServerErrorException('Erro ao deletar post');
     }
   }
 }
