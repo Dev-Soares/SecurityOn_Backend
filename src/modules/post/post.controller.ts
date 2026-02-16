@@ -4,6 +4,7 @@ import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { AuthGuard } from 'src/common/guards/auth/auth.guard';
 import { GetPostDto } from './dto/get-post.dto';
+import type { AuthenticatedRequest } from 'src/common/types/req-types';
 
 @Controller('post')
 export class PostController {
@@ -11,7 +12,7 @@ export class PostController {
 
   @Post()
   @UseGuards(AuthGuard)
-  create(@Body() createPostDto: CreatePostDto, @Request() req: any) {
+  create(@Body() createPostDto: CreatePostDto, @Request() req: AuthenticatedRequest) {
     return this.postService.create(createPostDto, req.user.sub);
   }
 
@@ -27,13 +28,13 @@ export class PostController {
 
   @Patch(':id')
   @UseGuards(AuthGuard)
-  update(@Param('id') id: string, @Body() updatePostDto: UpdatePostDto, @Request() req: any) {
+  update(@Param('id') id: string, @Body() updatePostDto: UpdatePostDto, @Request() req: AuthenticatedRequest) {
     return this.postService.update(id, updatePostDto, req.user.sub);
   }
 
   @Delete(':id')
   @UseGuards(AuthGuard)
-  remove(@Param('id') id: string, @Request() req: any) {
+  remove(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     return this.postService.remove(id, req.user.sub);
   }
 }

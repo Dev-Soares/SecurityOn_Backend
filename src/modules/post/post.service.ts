@@ -4,6 +4,7 @@ import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { Post, Prisma } from '@prisma/client';
 import { GetPostDto } from './dto/get-post.dto';
+import { PostQuery } from 'src/common/types/query-types';
 
 @Injectable()
 export class PostService {
@@ -23,7 +24,7 @@ export class PostService {
     }
   }
 
-  async findAll(dto: GetPostDto): Promise<Object> {
+  async findAll(dto: GetPostDto): Promise<PostQuery> {
 
     const take = Number(dto.limit) || 10;
 
@@ -60,7 +61,7 @@ export class PostService {
       return post;
     } catch(error){
       if (error instanceof NotFoundException) throw error;
-      throw new NotFoundException('Erro ao buscar post');
+      throw new InternalServerErrorException('Erro ao buscar post');
     }
   }
 

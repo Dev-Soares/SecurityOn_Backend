@@ -3,6 +3,7 @@ import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AuthGuard } from '../../common/guards/auth/auth.guard';
+import type { AuthenticatedRequest } from 'src/common/types/req-types';
 
 @Controller('user')
 export class UserController {
@@ -20,13 +21,13 @@ export class UserController {
 
   @Patch(':id')
   @UseGuards(AuthGuard)
-  update(@Param('id') id: string, @Body(ValidationPipe) updateUserDto: UpdateUserDto, @Request() req: any) {
+  update(@Param('id') id: string, @Body(ValidationPipe) updateUserDto: UpdateUserDto, @Request() req: AuthenticatedRequest) {
     return this.userService.update(id, updateUserDto, req.user.sub);
   }
 
   @Delete(':id')
   @UseGuards(AuthGuard)
-  remove(@Param('id') id: string, @Request() req: any) {
+  remove(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     return this.userService.remove(id, req.user.sub);
   }
 }

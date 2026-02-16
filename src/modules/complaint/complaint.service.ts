@@ -5,6 +5,7 @@ import { UpdateComplaintDto } from './dto/update-complaint.dto';
 import { PrismaService } from '../database/prisma.service';
 import { Complaint } from '@prisma/client';
 import { GetComplaintDto } from './dto/get-complaint.dto';
+import { ComplaintQuery } from 'src/common/types/query-types';
 
 
 @Injectable()
@@ -24,7 +25,7 @@ export class ComplaintService {
     }
   }
 
-  async findAll(dto: GetComplaintDto): Promise<Object> {
+  async findAll(dto: GetComplaintDto): Promise<ComplaintQuery> {
 
     const take = Number(dto.limit) || 6;
     try {

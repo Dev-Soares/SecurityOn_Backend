@@ -44,7 +44,7 @@ export class UserService {
       });
 
       if (!user) {
-        throw new UnauthorizedException('Usuário não encontrado');
+        throw new UnauthorizedException('Email ou senha inválidos');
       }
 
       return user;
