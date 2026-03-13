@@ -51,7 +51,5 @@ async function bootstrap() {
   app.use(cookieParser()) // cookie parser for http only 
 
   await app.listen(PORT); // Start the server
-  
-  console.log(`API running on port ${PORT}`)
 }
 bootstrap();

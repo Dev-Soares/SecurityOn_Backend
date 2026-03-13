@@ -31,9 +31,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode: status
     });
 
+    const message =
+      exception instanceof HttpException
+        ? exception.message
+        : "Internal server error";
+
     res.status(status).json({
       statusCode: status,
-      message: "Internal server error"
+      message,
     });
   }
 }
