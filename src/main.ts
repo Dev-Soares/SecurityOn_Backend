@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import basicAuth from 'express-basic-auth';
 import cookieParser from 'cookie-parser'
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { PinoLogger } from 'nestjs-pino';
 
 const PORT = process.env.PORT || 3000
 
@@ -41,7 +42,9 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.useGlobalFilters(new AllExceptionsFilter()); //error logger
+  const logger = app.get(PinoLogger)
+
+  app.useGlobalFilters(new AllExceptionsFilter(logger)); //error logger
 
   app.use(helmet()); // helmet protection
 

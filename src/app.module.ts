@@ -7,11 +7,24 @@ import { ComplaintModule } from './modules/complaint/complaint.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { LoggerModule } from "nestjs-pino";
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+    }),
+    LoggerModule.forRoot({
+      pinoHttp: {
+        transport:
+        {
+          target: "pino-pretty",
+          options: {
+            colorize: true,
+            translateTime: "HH:MM:ss"
+          }
+        }
+      }
     }),
     DatabaseModule,
     UserModule,
@@ -30,4 +43,4 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }
