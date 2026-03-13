@@ -3,7 +3,7 @@ import { Injectable, NotFoundException,
 import { CreateComplaintDto } from './dto/create-complaint.dto';
 import { UpdateComplaintDto } from './dto/update-complaint.dto';
 import { PrismaService } from '../database/prisma.service';
-import { Complaint } from '@prisma/client';
+import { Complaint } from '../../../prisma/prisma/client.js';
 import { GetComplaintDto } from './dto/get-complaint.dto';
 import { ComplaintQuery } from 'src/common/types/query-types';
 
