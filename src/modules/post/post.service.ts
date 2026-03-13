@@ -2,7 +2,7 @@ import { Injectable, InternalServerErrorException, NotFoundException, Unauthoriz
 import { PrismaService } from '../database/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
-import { Post, Prisma } from '../../../prisma/prisma/client.js';
+import { Post, Prisma } from '@prisma/client';
 import { GetPostDto } from './dto/get-post.dto';
 import { PostQuery } from 'src/common/types/query-types';
 

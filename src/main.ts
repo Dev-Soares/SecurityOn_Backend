@@ -4,7 +4,8 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import basicAuth from 'express-basic-auth';
-import * as cookieParser from 'cookie-parser'
+import cookieParser from 'cookie-parser'
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 const PORT = process.env.PORT || 3000
 
@@ -39,6 +40,8 @@ async function bootstrap() {
     allowedHeaders: 'Content-Type, Accept, Authorization',
     credentials: true,
   });
+
+  app.useGlobalFilters(new AllExceptionsFilter()); //error logger
 
   app.use(helmet()); // helmet protection
 

@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(npm run:*)",
+      "Bash(node -e \"try { require\\(''@prisma/client''\\); console.log\\(''OK''\\); } catch\\(e\\) { console.log\\(e.message.substring\\(0, 200\\)\\); }\")"
     ]
   }
 }

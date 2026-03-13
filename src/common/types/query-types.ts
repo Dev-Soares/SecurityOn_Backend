@@ -1,4 +1,4 @@
-import { Complaint, Post } from "prisma/prisma/client"
+import { Complaint, Post } from "@prisma/client"
 
 
 export type PostQuery = {
