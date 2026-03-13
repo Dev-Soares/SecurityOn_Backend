@@ -1,4 +1,4 @@
-import { Complaint, Post } from "@prisma/client"
+import { Article, Complaint, Post } from "@prisma/client"
 
 
 export type PostQuery = {
@@ -9,6 +9,12 @@ export type PostQuery = {
 
 export type ComplaintQuery = {
     data: Complaint[]
+    nextCursor: string | null
+    hasNextPage: boolean
+}
+
+export type ArticleQuery = {
+    data: Article[]
     nextCursor: string | null
     hasNextPage: boolean
 }

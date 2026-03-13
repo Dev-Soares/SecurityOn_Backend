@@ -4,6 +4,7 @@ import { DatabaseModule } from './modules/database/database.module';
 import { UserModule } from './modules/user/user.module';
 import { PostModule } from './modules/post/post.module';
 import { ComplaintModule } from './modules/complaint/complaint.module';
+import { ArticleModule } from './modules/article/article.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -30,6 +31,7 @@ import { LoggerModule } from "nestjs-pino";
     UserModule,
     PostModule,
     ComplaintModule,
+    ArticleModule,
     AuthModule,
     ThrottlerModule.forRoot([{
       ttl: 60000,

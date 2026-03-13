@@ -19,6 +19,7 @@ model User {
   password  String
   posts    Post[]
   complaints Complaint[]
+  articles  Article[]
 }
 
 model Post {
@@ -32,6 +33,16 @@ model Post {
 
 model Complaint {
   id          String   @id @default(uuid())
+  content     String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  createdAt   DateTime @default(now())
+}
+
+model Article {
+  id          String   @id @default(uuid())
+  bgUrl       String?
+  title       String
   content     String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId      String
