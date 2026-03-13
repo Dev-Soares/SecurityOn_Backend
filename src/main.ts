@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import basicAuth from 'express-basic-auth';
+import * as cookieParser from 'cookie-parser'
 
 const PORT = process.env.PORT || 3000
 
@@ -40,6 +41,8 @@ async function bootstrap() {
   });
 
   app.use(helmet()); // helmet protection
+
+  app.use(cookieParser()) // cookie parser for http only 
 
   await app.listen(PORT); // Start the server
   
