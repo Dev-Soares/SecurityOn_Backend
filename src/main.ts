@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
@@ -42,7 +42,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const logger = app.get(PinoLogger)
+  const logger = await app.resolve(PinoLogger)
 
   app.useGlobalFilters(new AllExceptionsFilter(logger)); //error logger
 
@@ -51,5 +51,7 @@ async function bootstrap() {
   app.use(cookieParser()) // cookie parser for http only 
 
   await app.listen(PORT); // Start the server
+
+  Logger.log(`API running on port ${PORT}`)
 }
 bootstrap();
