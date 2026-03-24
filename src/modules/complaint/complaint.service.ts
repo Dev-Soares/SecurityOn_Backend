@@ -16,7 +16,11 @@ export class ComplaintService {
     try {
       return await this.prisma.complaint.create({
         data: {
+          title: createComplaintDto.title,
           content: createComplaintDto.content,
+          danger: createComplaintDto.danger,
+          store: createComplaintDto.store,
+          link: createComplaintDto.link,
           userId: userId
         },
       });
@@ -89,7 +93,11 @@ export class ComplaintService {
       return await this.prisma.complaint.update({
         where: { id },
         data: {
+          title: updateComplaintDto.title,
           content: updateComplaintDto.content,
+          danger: updateComplaintDto.danger,
+          store: updateComplaintDto.store,
+          link: updateComplaintDto.link,
         },
       });
     } catch (error) {
