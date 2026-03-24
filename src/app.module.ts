@@ -18,15 +18,26 @@ import { LoggerModule } from "nestjs-pino";
     }),
     LoggerModule.forRoot({
       pinoHttp: {
-        transport:
-        {
+        autoLogging: true,
+        serializers: {
+          req: (req) => ({
+            method: req.method,
+            url: req.url,
+          }),
+          res: (res) => ({
+            statusCode: res.statusCode,
+          }),
+        },
+        transport: {
           target: "pino-pretty",
           options: {
             colorize: true,
-            translateTime: "HH:MM:ss"
-          }
-        }
-      }
+            translateTime: "HH:MM:ss",
+            ignore: "pid,hostname",
+            singleLine: true,
+          },
+        },
+      },
     }),
     DatabaseModule,
     UserModule,
