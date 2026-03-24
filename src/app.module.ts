@@ -6,6 +6,7 @@ import { PostModule } from './modules/post/post.module';
 import { ComplaintModule } from './modules/complaint/complaint.module';
 import { ArticleModule } from './modules/article/article.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { HealthModule } from './modules/health/health.module';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { LoggerModule } from "nestjs-pino";
@@ -33,6 +34,7 @@ import { LoggerModule } from "nestjs-pino";
     ComplaintModule,
     ArticleModule,
     AuthModule,
+    HealthModule,
     ThrottlerModule.forRoot([{
       ttl: 60000,
       limit: 100,
