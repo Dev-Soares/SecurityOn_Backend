@@ -1,9 +1,12 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import basicAuth from 'express-basic-auth';
+import cookieParser from 'cookie-parser'
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { PinoLogger } from 'nestjs-pino';
 
 const PORT = process.env.PORT || 3000
 
@@ -39,10 +42,16 @@ async function bootstrap() {
     credentials: true,
   });
 
+  const logger = await app.resolve(PinoLogger)
+
+  app.useGlobalFilters(new AllExceptionsFilter(logger)); //error logger
+
   app.use(helmet()); // helmet protection
 
+  app.use(cookieParser()) // cookie parser for http only 
+
   await app.listen(PORT); // Start the server
-  
-  console.log(`API running on port ${PORT}`)
+
+  Logger.log(`API running on port ${PORT}`)
 }
 bootstrap();
