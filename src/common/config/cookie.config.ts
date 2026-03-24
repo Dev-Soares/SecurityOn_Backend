@@ -1,8 +1,10 @@
 import type { CookieOptions } from 'express';
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 export const cookieConfig: CookieOptions = {
   httpOnly: true,
-  secure: process.env.SECURE_COOKIE === 'true',
-  sameSite: 'strict',
+  secure: isProduction,
+  sameSite: isProduction ? 'none' : 'strict',
   maxAge: 1000 * 60 * 60 * 24, // 1 dia
 };
