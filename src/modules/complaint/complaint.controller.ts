@@ -3,7 +3,7 @@ import { ComplaintService } from './complaint.service';
 import { CreateComplaintDto } from './dto/create-complaint.dto';
 import { UpdateComplaintDto } from './dto/update-complaint.dto';
 import { AuthGuard } from 'src/common/guards/auth/auth.guard';
-import { GetComplaintDto } from './dto/get-complaint.dto';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
 import type { AuthenticatedRequest } from 'src/common/types/req-types';
 
 @Controller('complaint')
@@ -17,7 +17,7 @@ export class ComplaintController {
   }
 
   @Get()
-  findAll(@Query() query: GetComplaintDto) {
+  findAll(@Query() query: PaginationDto) {
     return this.complaintService.findAll(query);
   }
 

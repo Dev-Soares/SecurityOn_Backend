@@ -3,8 +3,8 @@ import { PrismaService } from '../database/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { Post, Prisma } from '@prisma/client';
-import { GetPostDto } from './dto/get-post.dto';
-import { PostQuery } from 'src/common/types/query-types';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
+import { PaginatedQuery } from 'src/common/types/query-types';
 
 @Injectable()
 export class PostService {
@@ -24,7 +24,7 @@ export class PostService {
     }
   }
 
-  async findAll(dto: GetPostDto): Promise<PostQuery> {
+  async findAll(dto: PaginationDto): Promise<PaginatedQuery<Post>> {
 
     const take = Number(dto.limit) || 10;
 

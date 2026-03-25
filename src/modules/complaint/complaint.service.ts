@@ -4,8 +4,8 @@ import { CreateComplaintDto } from './dto/create-complaint.dto';
 import { UpdateComplaintDto } from './dto/update-complaint.dto';
 import { PrismaService } from '../database/prisma.service';
 import { Complaint } from '@prisma/client';
-import { GetComplaintDto } from './dto/get-complaint.dto';
-import { ComplaintQuery } from 'src/common/types/query-types';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
+import { PaginatedQuery } from 'src/common/types/query-types';
 
 
 @Injectable()
@@ -29,7 +29,7 @@ export class ComplaintService {
     }
   }
 
-  async findAll(dto: GetComplaintDto): Promise<ComplaintQuery> {
+  async findAll(dto: PaginationDto): Promise<PaginatedQuery<Complaint>> {
 
     const take = Number(dto.limit) || 10;
     if (take >= 100) throw new InternalServerErrorException('O limite máximo é 100')

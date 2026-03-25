@@ -3,7 +3,7 @@ import { PostService } from './post.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { AuthGuard } from 'src/common/guards/auth/auth.guard';
-import { GetPostDto } from './dto/get-post.dto';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
 import type { AuthenticatedRequest } from 'src/common/types/req-types';
 
 @Controller('post')
@@ -17,7 +17,7 @@ export class PostController {
   }
 
   @Get()
-  findAll(@Query() query: GetPostDto) {
+  findAll(@Query() query: PaginationDto) {
     return this.postService.findAll(query);
   }
 
