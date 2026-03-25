@@ -21,6 +21,11 @@ export class ComplaintController {
     return this.complaintService.findAll(query);
   }
 
+  @Get('all/:id')
+  findByUser(@Query() query: PaginationDto, @Param('id') id: string) {
+    return this.complaintService.findByUser(query, id);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.complaintService.findOne(id);

@@ -29,6 +29,33 @@ export class ComplaintService {
     }
   }
 
+  async findByUser(dto: PaginationDto, id: string): Promise<PaginatedQuery<Complaint>> {
+
+    const take = Number(dto.limit) || 10;
+    if (take >= 100) throw new InternalServerErrorException('O limite máximo é 100')
+    try {
+      const searchedComplaints = await this.prisma.complaint.findMany({
+        take: take + 1,
+        cursor: dto.cursor ? { id: dto.cursor } : undefined,
+        skip: dto.cursor ? 1 : 0,
+        orderBy: { createdAt: 'desc' },
+        where: { userId: id }
+      });
+
+      const hasNextPage = searchedComplaints.length > take;
+      const complaints = hasNextPage ? searchedComplaints.slice(0, -1) : searchedComplaints;
+      const finalItem = complaints[complaints.length - 1];
+
+      return {
+        data: complaints,
+        nextCursor: hasNextPage ? finalItem.id : null,
+        hasNextPage: hasNextPage,
+      }
+    } catch (error) {
+      throw new InternalServerErrorException('Erro ao buscar Denúncias');
+    }
+  }
+
   async findAll(dto: PaginationDto): Promise<PaginatedQuery<Complaint>> {
 
     const take = Number(dto.limit) || 10;
