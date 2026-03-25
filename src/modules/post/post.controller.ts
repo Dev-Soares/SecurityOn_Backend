@@ -21,6 +21,11 @@ export class PostController {
     return this.postService.findAll(query);
   }
 
+  @Get('all/:id')
+  findByUser(@Query() query: PaginationDto ,@Param('id') id: string) {
+    return this.postService.findByUser(query,id);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.postService.findOne(id);
