@@ -6,3 +6,7 @@ export type RequestTokenPayload = {
 export type AuthenticatedRequest = {
   user: RequestTokenPayload;
 }
+
+export type OptionalAuthRequest = {
+  user: RequestTokenPayload | null;
+}
