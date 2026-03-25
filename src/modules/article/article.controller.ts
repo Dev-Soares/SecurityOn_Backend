@@ -3,7 +3,7 @@ import { ArticleService } from './article.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { AuthGuard } from 'src/common/guards/auth/auth.guard';
-import { GetArticleDto } from './dto/get-article.dto';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
 import type { AuthenticatedRequest } from 'src/common/types/req-types';
 
 @Controller('article')
@@ -16,8 +16,13 @@ export class ArticleController {
     return this.articleService.create(createArticleDto, req.user.sub);
   }
 
+  @Get('/all/:id')
+  findByUser(@Query() query: PaginationDto, @Param('id') id: string){
+    return this.articleService.findByUser(query, id)
+  }
+
   @Get()
-  findAll(@Query() query: GetArticleDto) {
+  findAll(@Query() query: PaginationDto) {
     return this.articleService.findAll(query);
   }
 

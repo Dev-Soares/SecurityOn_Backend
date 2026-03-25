@@ -1,6 +1,6 @@
 import { IsString, IsOptional } from "class-validator";
 
-export class GetArticleDto {
+export class PaginationDto {
     @IsOptional()
     @IsString()
     cursor?: string;

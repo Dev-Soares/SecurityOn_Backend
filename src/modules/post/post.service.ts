@@ -3,8 +3,8 @@ import { PrismaService } from '../database/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { Post, Prisma } from '@prisma/client';
-import { GetPostDto } from './dto/get-post.dto';
-import { PostQuery } from 'src/common/types/query-types';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
+import { PaginatedQuery } from 'src/common/types/query-types';
 
 @Injectable()
 export class PostService {
@@ -24,7 +24,36 @@ export class PostService {
     }
   }
 
-  async findAll(dto: GetPostDto): Promise<PostQuery> {
+  async findByUser(dto: PaginationDto, id: string): Promise<PaginatedQuery<Post>> {
+
+    const take = Number(dto.limit) || 10;
+
+    if(take>=100) throw new InternalServerErrorException('O limite máximo é 100');
+
+    try{
+      const searchedPosts = await this.prisma.post.findMany({
+        take: take + 1,
+        cursor: dto.cursor ? { id: dto.cursor } : undefined,
+        skip: dto.cursor ? 1 : 0,
+        orderBy: { createdAt: 'desc' },
+        where: { userId: id}
+      });
+
+      const hasNextPage = searchedPosts.length > take;
+      const posts = hasNextPage ? searchedPosts.slice(0, -1) : searchedPosts;
+      const finalItem = posts[posts.length - 1];
+
+      return {
+        data: posts,
+        nextCursor: hasNextPage ? finalItem.id : null,
+        hasNextPage: hasNextPage
+      };
+    } catch (error){
+      throw new InternalServerErrorException('Erro ao buscar posts');
+    }
+  }
+
+  async findAll(dto: PaginationDto): Promise<PaginatedQuery<Post>> {
 
     const take = Number(dto.limit) || 10;
 
