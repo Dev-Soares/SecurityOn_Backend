@@ -3,12 +3,12 @@ import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { PrismaService } from '../database/prisma.service';
 import { Article } from '@prisma/client';
-import { GetArticleDto } from './dto/get-article.dto';
-import { ArticleQuery } from 'src/common/types/query-types';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
+import { PaginatedQuery } from 'src/common/types/query-types';
 
 @Injectable()
 export class ArticleService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async create(createArticleDto: CreateArticleDto, userId: string): Promise<Article> {
     try {
@@ -25,7 +25,34 @@ export class ArticleService {
     }
   }
 
-  async findAll(dto: GetArticleDto): Promise<ArticleQuery> {
+  async findByUser(dto: PaginationDto, id: string): Promise<PaginatedQuery<Article>> {
+    const take = Number(dto.limit) || 10;
+    if (take >= 100) throw new InternalServerErrorException('O limite máximo é 100')
+    try {
+      const searchedArticles = await this.prisma.article.findMany({
+        take: take + 1,
+        cursor: dto.cursor ? { id: dto.cursor } : undefined,
+        skip: dto.cursor ? 1 : 0,
+        orderBy: { createdAt: 'desc' },
+        where: { userId: id  }
+      });
+
+      const hasNextPage = searchedArticles.length > take;
+      const articles = hasNextPage ? searchedArticles.slice(0, -1) : searchedArticles;
+      const finalItem = articles[articles.length - 1];
+
+      return {
+        data: articles,
+        nextCursor: hasNextPage ? finalItem.id : null,
+        hasNextPage: hasNextPage
+      }
+    } catch (error) {
+      throw new InternalServerErrorException('Erro ao buscar Artigos');
+    }
+
+  }
+
+  async findAll(dto: PaginationDto): Promise<PaginatedQuery<Article>> {
     const take = Number(dto.limit) || 10;
     if (take >= 100) throw new InternalServerErrorException('O limite máximo é 100')
     try {
