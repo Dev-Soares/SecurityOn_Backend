@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { FriendshipStatus, Prisma } from '@prisma/client';
 import { UserService } from './user.service';
 import { PrismaService } from '../database/prisma.service';
 import { HashService } from '../../common/hash/hash.service';
@@ -24,6 +24,26 @@ describe('UserService', () => {
   const userId = 'user-1';
   const publicUser = { id: userId, name: 'Ana', email: 'ana@mail.com' };
   const fullUser = { ...publicUser, password: 'hashed' };
+
+  // Contagens cruas do Prisma: amizade é uma linha só, e o usuário pode estar
+  // em qualquer um dos dois lados dela.
+  const rawCount = {
+    posts: 2,
+    complaints: 1,
+    articles: 3,
+    sentRequests: 2,
+    receivedRequests: 3,
+  };
+
+  const countSelect = {
+    select: {
+      posts: true,
+      complaints: true,
+      articles: true,
+      sentRequests: { where: { status: FriendshipStatus.ACCEPTED } },
+      receivedRequests: { where: { status: FriendshipStatus.ACCEPTED } },
+    },
+  };
 
   beforeEach(async () => {
     resetPrismaMock();
@@ -123,16 +143,34 @@ describe('UserService', () => {
   });
 
   describe('findOne', () => {
-    it('retorna o usuário sem a senha', async () => {
-      prismaMock.user.findUnique.mockResolvedValue(publicUser);
+    it('retorna o usuário sem a senha e com as contagens do perfil', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({
+        ...publicUser,
+        _count: rawCount,
+      });
 
       const result = await service.findOne({ id: userId });
 
       expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
         where: { id: userId },
-        select: { id: true, name: true, email: true },
+        select: { id: true, name: true, email: true, _count: countSelect },
       });
-      expect(result).toEqual(publicUser);
+      expect(result).toEqual({
+        ...publicUser,
+        _count: { posts: 2, complaints: 1, articles: 3, friends: 5 },
+      });
+      expect(result).not.toHaveProperty('password');
+    });
+
+    it('soma os dois lados da amizade na contagem de amigos', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({
+        ...publicUser,
+        _count: { ...rawCount, sentRequests: 0, receivedRequests: 4 },
+      });
+
+      const result = await service.findOne({ id: userId });
+
+      expect(result._count.friends).toBe(4);
     });
 
     it('lança NotFoundException quando o usuário não existe', async () => {

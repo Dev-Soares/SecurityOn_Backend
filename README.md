@@ -1,6 +1,6 @@
 # SecurityOn — Backend
 
-API REST do projeto **SecurityOn**, uma plataforma comunitária de segurança digital onde usuários podem compartilhar posts, fazer denúncias de golpes/fraudes e publicar artigos informativos.
+API REST do projeto **SecurityOn**, uma plataforma comunitária de segurança digital onde usuários podem compartilhar posts, fazer denúncias de golpes/fraudes e publicar artigos informativos. Posts podem receber curtidas e comentários, e os usuários podem se conectar por pedidos de amizade.
 
 Construída com **NestJS**, **PostgreSQL** e **Prisma**, com autenticação JWT via cookies HTTP-only.
 
@@ -24,6 +24,9 @@ Construída com **NestJS**, **PostgreSQL** e **Prisma**, com autenticação JWT 
   - [Post](#post)
   - [Complaint (Denúncias)](#complaint-denúncias)
   - [Article](#article)
+  - [Like (Curtidas)](#like-curtidas)
+  - [Comment (Comentários)](#comment-comentários)
+  - [Friendship (Amizades)](#friendship-amizades)
   - [Health](#health)
 - [Paginação](#paginação)
 - [Autenticação](#autenticação)
@@ -63,9 +66,12 @@ src/
 └── modules/
     ├── auth/                        # Login e logout
     ├── article/                     # Artigos informativos
+    ├── comment/                     # Comentários em posts
     ├── complaint/                   # Denúncias de golpes e fraudes
     ├── database/                    # PrismaService (conexão com o banco)
+    ├── friendship/                  # Pedidos de amizade e lista de amigos
     ├── health/                      # Health check
+    ├── like/                        # Curtidas em posts
     ├── post/                        # Posts da comunidade
     └── user/                        # Gerenciamento de usuários
 
@@ -183,7 +189,19 @@ User        → id, name, email, password
 Post        → id, content, imgUrl?, userId, createdAt
 Complaint   → id, title, content, danger, store?, link?, userId, createdAt
 Article     → id, title, content, bgUrl?, userId, createdAt
+Like        → id, userId, postId, createdAt            (UNIQUE userId + postId)
+Comment     → id, content, userId, postId, createdAt
+Friendship  → id, requesterId, addresseeId, status, createdAt
+                                                        (UNIQUE requesterId + addresseeId)
 ```
+
+`Friendship.status` é um enum: `PENDING` (pedido enviado, aguardando resposta) ou
+`ACCEPTED` (amizade confirmada). Recusar, cancelar ou desfazer amizade apaga a linha —
+não existe status `REJECTED`.
+
+Todas as FKs usam `ON DELETE CASCADE`. Logo, apagar um post apaga suas curtidas e
+comentários, e apagar um usuário apaga seu conteúdo, suas curtidas, seus comentários e
+todas as suas amizades.
 
 ---
 
@@ -358,9 +376,9 @@ O acesso é protegido por autenticação básica (Basic Auth). Use as credenciai
 | Método | Rota | Autenticação | Descrição |
 |---|---|---|---|
 | `POST` | `/post` | Obrigatória | Cria um novo post |
-| `GET` | `/post` | Não | Lista todos os posts (paginado) |
-| `GET` | `/post/all/:id` | Não | Lista posts de um usuário específico (paginado) |
-| `GET` | `/post/:id` | Não | Busca um post por ID |
+| `GET` | `/post` | Opcional | Lista todos os posts (paginado) |
+| `GET` | `/post/all/:id` | Opcional | Lista posts de um usuário específico (paginado) |
+| `GET` | `/post/:id` | Opcional | Busca um post por ID |
 | `PATCH` | `/post/:id` | Obrigatória | Atualiza um post (somente o autor) |
 | `DELETE` | `/post/:id` | Obrigatória | Remove um post (somente o autor) |
 
@@ -371,6 +389,27 @@ O acesso é protegido por autenticação básica (Basic Auth). Use as credenciai
   "imgUrl": "https://exemplo.com/imagem.png"
 }
 ```
+
+As rotas de leitura (`GET /post`, `GET /post/all/:id` e `GET /post/:id`) usam
+**autenticação opcional** e já devolvem tudo que um feed precisa — totais de curtidas e
+comentários **e** se o usuário logado curtiu — em uma única query por requisição:
+
+```json
+{
+  "id": "uuid-do-post",
+  "content": "Conteúdo do post",
+  "imgUrl": null,
+  "userId": "uuid-do-autor",
+  "createdAt": "2026-11-17T12:00:00.000Z",
+  "_count": { "likes": 12, "comments": 3 },
+  "liked": true
+}
+```
+
+> Sem cookie de autenticação, `liked` vem sempre `false`.
+>
+> É por isso que não existe uma rota separada de status de curtida: o feed já chega
+> pronto, e `POST /like` / `DELETE /like/:postId` devolvem o novo total.
 
 ---
 
@@ -423,6 +462,184 @@ O acesso é protegido por autenticação básica (Basic Auth). Use as credenciai
 
 ---
 
+### Like (Curtidas)
+
+Curtidas valem para **posts**. Um usuário pode curtir o mesmo post apenas uma vez.
+
+| Método | Rota | Autenticação | Descrição |
+|---|---|---|---|
+| `POST` | `/like` | Obrigatória | Curte um post |
+| `DELETE` | `/like/:postId` | Obrigatória | Descurte o post (remove a própria curtida) |
+| `GET` | `/like/all/:postId` | Não | Lista quem curtiu um post (paginado) |
+| `GET` | `/like/user/:id` | Não | Lista as curtidas de um usuário (paginado) |
+
+**Body para curtir:**
+```json
+{
+  "postId": "uuid-do-post"
+}
+```
+
+**As duas mutações devolvem o estado já atualizado**, para o cliente não precisar de uma
+requisição extra depois de curtir ou descurtir:
+```json
+{
+  "postId": "uuid-do-post",
+  "total": 13,
+  "liked": true
+}
+```
+> `liked` é `true` no `POST` e `false` no `DELETE`; `total` é a contagem após a operação.
+> As duas rodam em uma única ida ao banco (`$transaction`), então o `total` nunca fica
+> defasado em relação à escrita que acabou de acontecer.
+
+> **Não existe rota de leitura de status.** Para saber se o usuário logado curtiu um post,
+> use `GET /post`, `GET /post/all/:id` ou `GET /post/:id` — todas já devolvem `liked` e
+> `_count.likes` na mesma query do post. Uma rota `GET /like/status/:postId` seria um
+> subconjunto estrito dessa resposta com o dobro de queries, e um feed de 20 posts
+> precisaria chamá-la 20 vezes.
+
+**Resposta de `GET /like/all/:postId`:** cada item inclui o autor da curtida.
+```json
+{
+  "data": [
+    {
+      "id": "uuid-da-curtida",
+      "userId": "uuid-do-usuario",
+      "postId": "uuid-do-post",
+      "createdAt": "2026-11-17T12:00:00.000Z",
+      "user": { "id": "uuid-do-usuario", "name": "João Silva" }
+    }
+  ],
+  "nextCursor": null,
+  "hasNextPage": false
+}
+```
+
+**Erros específicos:**
+
+| Status | Quando |
+|---|---|
+| `409 Conflict` | O usuário já curtiu este post |
+| `404 Not Found` | Post inexistente (no `POST`) ou curtida inexistente (no `DELETE`) |
+
+---
+
+### Comment (Comentários)
+
+Comentários valem para **posts** e são uma lista plana (não há resposta a comentário).
+
+| Método | Rota | Autenticação | Descrição |
+|---|---|---|---|
+| `POST` | `/comment` | Obrigatória | Cria um comentário em um post |
+| `GET` | `/comment/all/:postId` | Não | Lista os comentários de um post (paginado) |
+| `GET` | `/comment/user/:id` | Não | Lista os comentários de um usuário (paginado) |
+| `GET` | `/comment/:id` | Não | Busca um comentário por ID |
+| `PATCH` | `/comment/:id` | Obrigatória | Edita o comentário (somente o autor) |
+| `DELETE` | `/comment/:id` | Obrigatória | Remove o comentário (autor do comentário **ou** autor do post) |
+
+**Body para comentar:**
+```json
+{
+  "postId": "uuid-do-post",
+  "content": "Conteúdo do comentário (máx. 2000 caracteres)"
+}
+```
+
+**Body para editar** (apenas `content` — o post de destino não muda):
+```json
+{
+  "content": "Conteúdo corrigido"
+}
+```
+
+> `GET /comment/all/:postId` inclui o autor de cada comentário (`user: { id, name }`),
+> no mesmo formato de `GET /like/all/:postId`.
+
+> **Moderação:** o `DELETE` aceita tanto o autor do comentário quanto o autor do post
+> comentado, para que o dono do post possa remover comentários indevidos. O `PATCH`
+> continua restrito ao autor do comentário.
+
+---
+
+### Friendship (Amizades)
+
+Fluxo de pedido de amizade em duas etapas: o remetente envia (`PENDING`) e o
+destinatário aceita (`ACCEPTED`).
+
+| Método | Rota | Autenticação | Descrição |
+|---|---|---|---|
+| `POST` | `/friendship` | Obrigatória | Envia um pedido de amizade |
+| `GET` | `/friendship/requests/received` | Obrigatória | Pedidos pendentes recebidos (paginado) |
+| `GET` | `/friendship/requests/sent` | Obrigatória | Pedidos pendentes enviados (paginado) |
+| `GET` | `/friendship/status/:id` | Obrigatória | Relação entre o usuário logado e o usuário `:id` |
+| `GET` | `/friendship/all/:id` | Não | Lista de amigos de um usuário (paginado) |
+| `PATCH` | `/friendship/:id/accept` | Obrigatória | Aceita o pedido (somente o destinatário) |
+| `DELETE` | `/friendship/:id` | Obrigatória | Cancela, recusa ou desfaz a amizade |
+
+**Body para enviar pedido:**
+```json
+{
+  "addresseeId": "uuid-do-usuario"
+}
+```
+
+**Resposta de `GET /friendship/all/:id`** — já resolve qual dos dois lados é o amigo:
+```json
+{
+  "data": [
+    {
+      "friendshipId": "uuid-da-amizade",
+      "friendsSince": "2026-11-17T12:00:00.000Z",
+      "user": { "id": "uuid-do-amigo", "name": "Maria Souza" }
+    }
+  ],
+  "nextCursor": null,
+  "hasNextPage": false
+}
+```
+
+**Resposta de `GET /friendship/status/:id`:**
+```json
+{
+  "userId": "uuid-do-outro-usuario",
+  "relation": "pending_received",
+  "friendshipId": "uuid-da-amizade"
+}
+```
+
+Valores possíveis de `relation`:
+
+| Valor | Significado |
+|---|---|
+| `self` | O `:id` consultado é o próprio usuário logado |
+| `none` | Não existe nenhuma relação entre os dois |
+| `pending_sent` | O usuário logado enviou um pedido e aguarda resposta |
+| `pending_received` | O outro usuário enviou um pedido ao usuário logado |
+| `friends` | Amizade aceita |
+
+> `friendshipId` é `null` quando `relation` é `self` ou `none`.
+
+**O `DELETE` cobre três situações**, porque qualquer um dos dois lados da relação pode
+remover a linha:
+
+| Situação | Quem chama | Estado da amizade |
+|---|---|---|
+| Cancelar pedido enviado | Remetente | `PENDING` |
+| Recusar pedido recebido | Destinatário | `PENDING` |
+| Desfazer amizade | Qualquer um dos dois | `ACCEPTED` |
+
+**Erros específicos:**
+
+| Status | Quando |
+|---|---|
+| `400 Bad Request` | Pedido de amizade para si mesmo |
+| `404 Not Found` | Usuário de destino inexistente, ou amizade/pedido inexistente |
+| `409 Conflict` | Já são amigos, pedido já enviado, pedido já existe no sentido inverso, ou pedido já aceito |
+| `401 Unauthorized` | Aceitar um pedido do qual não é destinatário, ou remover amizade da qual não participa |
+
+---
+
 ### Health
 
 | Método | Rota | Autenticação | Descrição |
@@ -438,7 +655,11 @@ O acesso é protegido por autenticação básica (Basic Auth). Use as credenciai
 
 ## Paginação
 
-Todos os endpoints de listagem (`GET /post`, `GET /complaint`, `GET /article` e suas variantes por usuário) usam **paginação por cursor**.
+Todos os endpoints de listagem usam **paginação por cursor**: `GET /post`, `GET /complaint`,
+`GET /article` e suas variantes por usuário, além de `GET /like/all/:postId`,
+`GET /like/user/:id`, `GET /comment/all/:postId`, `GET /comment/user/:id`,
+`GET /friendship/all/:id`, `GET /friendship/requests/received` e
+`GET /friendship/requests/sent`.
 
 ### Query params disponíveis
 
@@ -494,6 +715,11 @@ A autenticação é baseada em **JWT armazenado em cookie HTTP-only**.
 ### Autorização de recursos
 
 Rotas de edição e exclusão verificam se o `userId` do token corresponde ao dono do recurso. Caso contrário, retorna `401 Unauthorized`.
+
+Duas exceções, por serem recursos de relação entre usuários:
+
+- `DELETE /comment/:id` aceita o autor do comentário **ou** o autor do post comentado (moderação).
+- `PATCH /friendship/:id/accept` aceita somente o destinatário do pedido, e `DELETE /friendship/:id` aceita qualquer um dos dois lados da relação.
 
 ---
 

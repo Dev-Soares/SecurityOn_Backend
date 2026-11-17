@@ -5,6 +5,8 @@ import { PrismaService } from '../database/prisma.service';
 import { Article } from '@prisma/client';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
 import { PaginatedQuery } from 'src/common/types/query-types';
+import { articleReadInclude } from './article.mapper';
+import { ArticleWithAuthor } from './types/article-types';
 
 @Injectable()
 export class ArticleService {
@@ -25,7 +27,7 @@ export class ArticleService {
     }
   }
 
-  async findByUser(dto: PaginationDto, id: string): Promise<PaginatedQuery<Article>> {
+  async findByUser(dto: PaginationDto, id: string): Promise<PaginatedQuery<ArticleWithAuthor>> {
     const take = Number(dto.limit) || 10;
     if (take >= 100) throw new InternalServerErrorException('O limite máximo é 100')
     try {
@@ -34,7 +36,8 @@ export class ArticleService {
         cursor: dto.cursor ? { id: dto.cursor } : undefined,
         skip: dto.cursor ? 1 : 0,
         orderBy: { createdAt: 'desc' },
-        where: { userId: id  }
+        where: { userId: id  },
+        include: articleReadInclude
       });
 
       const hasNextPage = searchedArticles.length > take;
@@ -52,7 +55,7 @@ export class ArticleService {
 
   }
 
-  async findAll(dto: PaginationDto): Promise<PaginatedQuery<Article>> {
+  async findAll(dto: PaginationDto): Promise<PaginatedQuery<ArticleWithAuthor>> {
     const take = Number(dto.limit) || 10;
     if (take >= 100) throw new InternalServerErrorException('O limite máximo é 100')
     try {
@@ -61,6 +64,7 @@ export class ArticleService {
         cursor: dto.cursor ? { id: dto.cursor } : undefined,
         skip: dto.cursor ? 1 : 0,
         orderBy: { createdAt: 'desc' },
+        include: articleReadInclude
       });
 
       const hasNextPage = searchedArticles.length > take;
@@ -77,10 +81,11 @@ export class ArticleService {
     }
   }
 
-  async findOne(id: string): Promise<Article> {
+  async findOne(id: string): Promise<ArticleWithAuthor> {
     try {
       const article = await this.prisma.article.findUnique({
         where: { id: id },
+        include: articleReadInclude
       });
 
       if (!article) {

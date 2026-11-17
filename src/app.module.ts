@@ -7,6 +7,9 @@ import { ComplaintModule } from './modules/complaint/complaint.module';
 import { ArticleModule } from './modules/article/article.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
+import { LikeModule } from './modules/like/like.module';
+import { CommentModule } from './modules/comment/comment.module';
+import { FriendshipModule } from './modules/friendship/friendship.module';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { LoggerModule } from "nestjs-pino";
@@ -46,6 +49,9 @@ import { LoggerModule } from "nestjs-pino";
     ArticleModule,
     AuthModule,
     HealthModule,
+    LikeModule,
+    CommentModule,
+    FriendshipModule,
     ThrottlerModule.forRoot([{
       ttl: 60000,
       limit: 100,
