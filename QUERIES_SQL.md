@@ -4,8 +4,8 @@ Documento acadêmico. Cada query do ORM (Prisma) usada no projeto está traduzid
 o SQL equivalente em **PostgreSQL** (`provider = "postgresql"` em `prisma/schema.prisma`).
 
 > Observação: o Prisma faz *quoting* de identificadores em PascalCase, então as tabelas
-> são referenciadas como `"User"`, `"Post"`, `"Complaint"`, `"Article"`, `"Like"` e
-> `"Comment"`.
+> são referenciadas como `"User"`, `"Post"`, `"Complaint"`, `"Article"`, `"Like"`,
+> `"Comment"` e `"Friendship"`.
 
 ---
 
@@ -59,6 +59,9 @@ CREATE TABLE "Article" (
         REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+-- Enum de status do pedido de amizade
+CREATE TYPE "FriendshipStatus" AS ENUM ('PENDING', 'ACCEPTED');
+
 CREATE TABLE "Like" (
     "id"        TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
     "userId"    TEXT NOT NULL,
@@ -83,10 +86,25 @@ CREATE TABLE "Comment" (
         REFERENCES "Post"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+CREATE TABLE "Friendship" (
+    "id"          TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+    "requesterId" TEXT NOT NULL,
+    "addresseeId" TEXT NOT NULL,
+    "status"      "FriendshipStatus" NOT NULL DEFAULT 'PENDING',
+    "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Friendship_requesterId_addresseeId_key" UNIQUE ("requesterId", "addresseeId"),
+    CONSTRAINT "Friendship_requesterId_fkey" FOREIGN KEY ("requesterId")
+        REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Friendship_addresseeId_fkey" FOREIGN KEY ("addresseeId")
+        REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
 -- Índices criados pela migration (declarados com @@index no schema)
 CREATE INDEX "Like_postId_createdAt_idx"    ON "Like"    ("postId", "createdAt");
 CREATE INDEX "Comment_postId_createdAt_idx" ON "Comment" ("postId", "createdAt");
 CREATE INDEX "Comment_userId_createdAt_idx" ON "Comment" ("userId", "createdAt");
+CREATE INDEX "Friendship_addresseeId_status_createdAt_idx" ON "Friendship" ("addresseeId", "status", "createdAt");
+CREATE INDEX "Friendship_requesterId_status_createdAt_idx" ON "Friendship" ("requesterId", "status", "createdAt");
 
 -- Índices recomendados para as consultas paginadas por usuário
 CREATE INDEX "Post_userId_createdAt_idx"      ON "Post"      ("userId", "createdAt" DESC);
@@ -98,24 +116,29 @@ CREATE INDEX "Article_userId_createdAt_idx"   ON "Article"   ("userId", "created
 
 | Tabela | PK | FK | Cardinalidade |
 |---|---|---|---|
-| `User` | `id` | — | 1 : N com Post, Complaint, Article, Like e Comment |
+| `User` | `id` | — | 1 : N com Post, Complaint, Article, Like, Comment e Friendship |
 | `Post` | `id` | `userId → User.id` | N : 1 |
 | `Complaint` | `id` | `userId → User.id` | N : 1 |
 | `Article` | `id` | `userId → User.id` | N : 1 |
 | `Like` | `id` | `userId → User.id`, `postId → Post.id` | tabela associativa N : N entre User e Post |
 | `Comment` | `id` | `userId → User.id`, `postId → Post.id` | N : 1 com User e com Post |
+| `Friendship` | `id` | `requesterId → User.id`, `addresseeId → User.id` | auto-relacionamento N : N em User |
 
 Todas as FKs usam `ON DELETE CASCADE`: apagar um usuário apaga seus posts,
-denúncias, artigos, curtidas e comentários; apagar um post apaga as
+denúncias, artigos, curtidas, comentários e amizades; apagar um post apaga as
 curtidas e os comentários daquele post.
 
-Dois detalhes de modelagem valem destaque:
+Três detalhes de modelagem valem destaque:
 
 - **`Like` é uma tabela associativa pura** (User ↔ Post) com `UNIQUE ("userId","postId")`.
   É a constraint UNIQUE que impede curtida duplicada — não há checagem na aplicação.
 - **`Comment` não é associativa**, apesar de também ter duas FKs: ela carrega dado
   próprio (`content`), então um mesmo par usuário/post pode ter vários comentários.
   Daí a ausência de UNIQUE.
+- **`Friendship` é um auto-relacionamento** (as duas FKs apontam para `"User"`). O
+  `UNIQUE ("requesterId","addresseeId")` só impede duplicata no *mesmo sentido*;
+  impedir que A→B e B→A coexistam exige a verificação por `OR` feita na aplicação
+  (item 9.1).
 
 ---
 
@@ -990,12 +1013,275 @@ RETURNING c."id", c."content", c."userId", c."postId", c."createdAt";
 
 ---
 
-## 9. Queries derivadas (não estão no código, mas o modelo permite)
+## 9. Módulo Friendship (`src/modules/friendship/friendship.service.ts`)
+
+A tabela `"Friendship"` é um **auto-relacionamento** de `"User"`: as duas FKs
+(`requesterId` e `addresseeId`) apontam para a mesma tabela. Por isso quase toda query
+aqui precisa olhar os dois sentidos da relação.
+
+### 9.1 `create` — Enviar pedido de amizade
+
+**Prisma** — três queries: destinatário existe, relação já existe (nos dois sentidos), insere.
+```ts
+this.prisma.user.findUnique({ where: { id: dto.addresseeId } });
+
+this.prisma.friendship.findFirst({
+  where: {
+    OR: [
+      { requesterId, addresseeId: dto.addresseeId },
+      { requesterId: dto.addresseeId, addresseeId: requesterId },
+    ],
+  },
+});
+
+this.prisma.friendship.create({
+  data: { requesterId, addresseeId: dto.addresseeId },
+});
+```
+
+**SQL — passo 1 (destinatário existe?)**
+```sql
+SELECT "id" FROM "User" WHERE "id" = $2 LIMIT 1;
+```
+
+**SQL — passo 2 (já existe relação em qualquer sentido?)**
+```sql
+SELECT "id", "requesterId", "addresseeId", "status"
+FROM "Friendship"
+WHERE ("requesterId" = $1 AND "addresseeId" = $2)
+   OR ("requesterId" = $2 AND "addresseeId" = $1)
+LIMIT 1;
+```
+> O `OR` é o que impede A→B e B→A coexistirem. A constraint
+> `UNIQUE ("requesterId","addresseeId")` só cobre o mesmo sentido, então essa checagem
+> **tem** que acontecer na aplicação. O resultado define qual `409` é devolvido:
+> `status = 'ACCEPTED'` → "Vocês já são amigos"; `requesterId = $1` → "Pedido já enviado";
+> caso restante → "Este usuário já te enviou um pedido".
+
+**SQL — passo 3 (insere)**
+```sql
+INSERT INTO "Friendship" ("id", "requesterId", "addresseeId", "status", "createdAt")
+VALUES (uuid_generate_v4()::TEXT, $1, $2, 'PENDING', CURRENT_TIMESTAMP)
+RETURNING "id", "requesterId", "addresseeId", "status", "createdAt";
+```
+> A checagem `addresseeId = requesterId` (pedido para si mesmo → `400`) é feita antes de
+> qualquer SQL. Em SQL puro, seria um `CHECK ("requesterId" <> "addresseeId")` na tabela.
+
+### 9.2 `findReceived` — Pedidos pendentes recebidos (paginado)
+
+**Prisma**
+```ts
+this.prisma.friendship.findMany({
+  take: take + 1,
+  cursor: dto.cursor ? { id: dto.cursor } : undefined,
+  skip: dto.cursor ? 1 : 0,
+  orderBy: { createdAt: 'desc' },
+  where: { addresseeId: userId, status: FriendshipStatus.PENDING },
+  include: { requester: { select: { id: true, name: true } } },
+});
+```
+
+**SQL**
+```sql
+SELECT f."id", f."requesterId", f."addresseeId", f."status", f."createdAt",
+       u."id" AS "requester.id", u."name" AS "requester.name"
+FROM "Friendship" f
+INNER JOIN "User" u ON u."id" = f."requesterId"
+WHERE f."addresseeId" = $2
+  AND f."status" = 'PENDING'
+ORDER BY f."createdAt" DESC
+LIMIT $1;
+```
+> Atendido pelo índice `("addresseeId","status","createdAt")`.
+
+### 9.3 `findSent` — Pedidos pendentes enviados (paginado)
+
+```sql
+SELECT f."id", f."requesterId", f."addresseeId", f."status", f."createdAt",
+       u."id" AS "addressee.id", u."name" AS "addressee.name"
+FROM "Friendship" f
+INNER JOIN "User" u ON u."id" = f."addresseeId"
+WHERE f."requesterId" = $2
+  AND f."status" = 'PENDING'
+ORDER BY f."createdAt" DESC
+LIMIT $1;
+```
+> Mesma query do 9.2 com os papéis invertidos; atendida pelo índice
+> `("requesterId","status","createdAt")`.
+
+### 9.4 `findFriends` — Lista de amigos de um usuário (paginado)
+
+**Prisma**
+```ts
+this.prisma.friendship.findMany({
+  take: take + 1,
+  cursor: dto.cursor ? { id: dto.cursor } : undefined,
+  skip: dto.cursor ? 1 : 0,
+  orderBy: { createdAt: 'desc' },
+  where: {
+    status: FriendshipStatus.ACCEPTED,
+    OR: [{ requesterId: id }, { addresseeId: id }],
+  },
+  include: {
+    requester: { select: { id: true, name: true } },
+    addressee: { select: { id: true, name: true } },
+  },
+});
+```
+
+**SQL — como o Prisma faz** (traz os dois lados; o serviço escolhe em JS qual é o amigo)
+```sql
+SELECT f."id", f."requesterId", f."addresseeId", f."createdAt",
+       r."id" AS "requester.id", r."name" AS "requester.name",
+       a."id" AS "addressee.id", a."name" AS "addressee.name"
+FROM "Friendship" f
+INNER JOIN "User" r ON r."id" = f."requesterId"
+INNER JOIN "User" a ON a."id" = f."addresseeId"
+WHERE f."status" = 'ACCEPTED'
+  AND ($2 IN (f."requesterId", f."addresseeId"))
+ORDER BY f."createdAt" DESC
+LIMIT $1;
+```
+
+**SQL — resolvendo o amigo no próprio banco** (`CASE`, sem precisar de JS)
+```sql
+SELECT f."id"        AS "friendshipId",
+       f."createdAt" AS "friendsSince",
+       u."id"        AS "userId",
+       u."name"      AS "userName"
+FROM "Friendship" f
+INNER JOIN "User" u
+        ON u."id" = CASE WHEN f."requesterId" = $2
+                         THEN f."addresseeId"
+                         ELSE f."requesterId"
+                    END
+WHERE f."status" = 'ACCEPTED'
+  AND ($2 IN (f."requesterId", f."addresseeId"))
+ORDER BY f."createdAt" DESC
+LIMIT $1;
+```
+> É o `CASE` que o serviço reproduz em TypeScript:
+> `friendship.requesterId === id ? friendship.addressee : friendship.requester`.
+> O Prisma não expressa um JOIN condicional assim, por isso os dois lados vêm e a
+> escolha acontece no `.map()`.
+
+**Alternativa com `UNION ALL`** (duas buscas indexadas em vez de um `OR`):
+```sql
+SELECT f."id" AS "friendshipId", f."createdAt" AS "friendsSince",
+       f."addresseeId" AS "friendId"
+FROM "Friendship" f
+WHERE f."requesterId" = $2 AND f."status" = 'ACCEPTED'
+UNION ALL
+SELECT f."id", f."createdAt", f."requesterId"
+FROM "Friendship" f
+WHERE f."addresseeId" = $2 AND f."status" = 'ACCEPTED'
+ORDER BY "friendsSince" DESC
+LIMIT $1;
+```
+
+### 9.5 `findStatus` — Relação entre dois usuários
+
+**Prisma**
+```ts
+this.prisma.friendship.findFirst({
+  where: {
+    OR: [
+      { requesterId: userId, addresseeId: id },
+      { requesterId: id, addresseeId: userId },
+    ],
+  },
+});
+```
+
+**SQL**
+```sql
+SELECT "id", "requesterId", "addresseeId", "status"
+FROM "Friendship"
+WHERE ("requesterId" = $1 AND "addresseeId" = $2)
+   OR ("requesterId" = $2 AND "addresseeId" = $1)
+LIMIT 1;
+```
+
+**Versão que já devolve o rótulo da relação**
+```sql
+SELECT f."id" AS "friendshipId",
+       CASE
+           WHEN f."status" = 'ACCEPTED'      THEN 'friends'
+           WHEN f."requesterId" = $1         THEN 'pending_sent'
+           ELSE                                   'pending_received'
+       END AS "relation"
+FROM "Friendship" f
+WHERE ("requesterId" = $1 AND "addresseeId" = $2)
+   OR ("requesterId" = $2 AND "addresseeId" = $1)
+LIMIT 1;
+```
+> Nenhuma linha = `relation: 'none'`. O caso `relation: 'self'` ($1 = $2) é resolvido
+> antes do SQL, sem ida ao banco.
+
+### 9.6 `accept` — Aceitar pedido de amizade
+
+**SQL — passo 1 (verificar destinatário e status)**
+```sql
+SELECT "id", "requesterId", "addresseeId", "status"
+FROM "Friendship"
+WHERE "id" = $1
+LIMIT 1;
+```
+
+**SQL — passo 2**
+```sql
+UPDATE "Friendship"
+SET "status" = 'ACCEPTED'
+WHERE "id" = $1
+RETURNING "id", "requesterId", "addresseeId", "status", "createdAt";
+```
+
+**Versão única, com a regra toda no WHERE**
+```sql
+UPDATE "Friendship"
+SET "status" = 'ACCEPTED'
+WHERE "id" = $1
+  AND "addresseeId" = $2        -- só o destinatário aceita
+  AND "status" = 'PENDING'      -- e só se ainda estiver pendente
+RETURNING "id", "requesterId", "addresseeId", "status", "createdAt";
+```
+> Os dois passos existem para separar os três erros: `404` (não existe),
+> `401` (não é o destinatário) e `409` (já estava aceito). A versão única devolve
+> zero linhas nos três casos, sem dizer qual aconteceu.
+
+### 9.7 `remove` — Cancelar, recusar ou desfazer amizade
+
+**SQL — passo 1**
+```sql
+SELECT "id", "requesterId", "addresseeId" FROM "Friendship" WHERE "id" = $1 LIMIT 1;
+```
+
+**SQL — passo 2**
+```sql
+DELETE FROM "Friendship"
+WHERE "id" = $1
+RETURNING "id", "requesterId", "addresseeId", "status", "createdAt";
+```
+
+**Versão única**
+```sql
+DELETE FROM "Friendship"
+WHERE "id" = $1
+  AND $2 IN ("requesterId", "addresseeId")    -- qualquer um dos dois lados
+RETURNING "id", "requesterId", "addresseeId", "status", "createdAt";
+```
+> Um único `DELETE` cobre as três operações do fluxo — cancelar pedido enviado, recusar
+> pedido recebido e desfazer amizade — porque todas resultam na ausência da linha.
+> É por isso que não existe status `REJECTED` no enum.
+
+---
+
+## 10. Queries derivadas (não estão no código, mas o modelo permite)
 
 Consultas que o schema torna possíveis — úteis para demonstrar JOIN, agregação e
 subconsulta em trabalho acadêmico.
 
-### 9.1 Posts com dados do autor (INNER JOIN)
+### 10.1 Posts com dados do autor (INNER JOIN)
 ```sql
 SELECT p."id", p."content", p."imgUrl", p."createdAt",
        u."id" AS "autorId", u."name" AS "autorNome"
@@ -1005,7 +1291,7 @@ ORDER BY p."createdAt" DESC
 LIMIT 10;
 ```
 
-### 9.2 Denúncias com autor, filtrando por nível de perigo
+### 10.2 Denúncias com autor, filtrando por nível de perigo
 ```sql
 SELECT c."title", c."danger", c."store", c."createdAt", u."name" AS "autor"
 FROM "Complaint" c
@@ -1014,7 +1300,7 @@ WHERE c."danger" = 'alto'
 ORDER BY c."createdAt" DESC;
 ```
 
-### 9.3 Contagem de conteúdo por usuário (agregação + LEFT JOIN)
+### 10.3 Contagem de conteúdo por usuário (agregação + LEFT JOIN)
 ```sql
 SELECT u."id", u."name", u."email",
        COUNT(DISTINCT p."id") AS "totalPosts",
@@ -1028,7 +1314,7 @@ GROUP BY u."id", u."name", u."email"
 ORDER BY "totalPosts" DESC;
 ```
 
-### 9.4 Denúncias agrupadas por nível de perigo
+### 10.4 Denúncias agrupadas por nível de perigo
 ```sql
 SELECT "danger", COUNT(*) AS "quantidade"
 FROM "Complaint"
@@ -1036,7 +1322,7 @@ GROUP BY "danger"
 ORDER BY "quantidade" DESC;
 ```
 
-### 9.5 Lojas mais denunciadas (GROUP BY + HAVING)
+### 10.5 Lojas mais denunciadas (GROUP BY + HAVING)
 ```sql
 SELECT "store", COUNT(*) AS "denuncias"
 FROM "Complaint"
@@ -1047,7 +1333,7 @@ ORDER BY "denuncias" DESC
 LIMIT 10;
 ```
 
-### 9.6 Usuários sem nenhum post (subconsulta com NOT EXISTS)
+### 10.6 Usuários sem nenhum post (subconsulta com NOT EXISTS)
 ```sql
 SELECT u."id", u."name", u."email"
 FROM "User" u
@@ -1056,7 +1342,7 @@ WHERE NOT EXISTS (
 );
 ```
 
-### 9.7 Feed unificado dos três tipos de conteúdo (UNION ALL)
+### 10.7 Feed unificado dos três tipos de conteúdo (UNION ALL)
 ```sql
 SELECT "id", 'post' AS "tipo", "content" AS "texto", "createdAt", "userId"
 FROM "Post"
@@ -1070,7 +1356,7 @@ ORDER BY "createdAt" DESC
 LIMIT 20;
 ```
 
-### 9.8 Último post de cada usuário (window function)
+### 10.8 Último post de cada usuário (window function)
 ```sql
 SELECT "id", "content", "userId", "createdAt"
 FROM (
@@ -1081,7 +1367,7 @@ FROM (
 WHERE rn = 1;
 ```
 
-### 9.9 Denúncias dos últimos 7 dias
+### 10.9 Denúncias dos últimos 7 dias
 ```sql
 SELECT "id", "title", "danger", "createdAt"
 FROM "Complaint"
@@ -1089,7 +1375,7 @@ WHERE "createdAt" >= CURRENT_TIMESTAMP - INTERVAL '7 days'
 ORDER BY "createdAt" DESC;
 ```
 
-### 9.10 Busca textual em artigos (ILIKE)
+### 10.10 Busca textual em artigos (ILIKE)
 ```sql
 SELECT "id", "title", "createdAt"
 FROM "Article"
@@ -1099,7 +1385,7 @@ ORDER BY "createdAt" DESC
 LIMIT 20;
 ```
 
-### 9.11 Posts mais curtidos (ranking com agregação)
+### 10.11 Posts mais curtidos (ranking com agregação)
 ```sql
 SELECT p."id", p."content", u."name" AS "autor",
        COUNT(l."id") AS "curtidas"
@@ -1112,7 +1398,48 @@ LIMIT 10;
 ```
 > `LEFT JOIN` em vez de `INNER`: posts sem curtida ainda aparecem, com `curtidas = 0`.
 
-### 9.12 Engajamento de um post (curtidas + comentários em uma linha)
+### 10.12 Feed só com posts dos amigos (auto-relacionamento + IN)
+```sql
+SELECT p."id", p."content", p."createdAt", u."name" AS "autor"
+FROM "Post" p
+INNER JOIN "User" u ON u."id" = p."userId"
+WHERE p."userId" IN (
+    SELECT CASE WHEN f."requesterId" = $1
+                THEN f."addresseeId"
+                ELSE f."requesterId"
+           END
+    FROM "Friendship" f
+    WHERE f."status" = 'ACCEPTED'
+      AND $1 IN (f."requesterId", f."addresseeId")
+)
+ORDER BY p."createdAt" DESC
+LIMIT 20;
+```
+> A subconsulta é a lista de amigos do item 9.4 reaproveitada como filtro.
+
+### 10.13 Amigos em comum entre dois usuários (INTERSECT)
+```sql
+SELECT CASE WHEN f."requesterId" = $1 THEN f."addresseeId" ELSE f."requesterId" END
+FROM "Friendship" f
+WHERE f."status" = 'ACCEPTED' AND $1 IN (f."requesterId", f."addresseeId")
+INTERSECT
+SELECT CASE WHEN f."requesterId" = $2 THEN f."addresseeId" ELSE f."requesterId" END
+FROM "Friendship" f
+WHERE f."status" = 'ACCEPTED' AND $2 IN (f."requesterId", f."addresseeId");
+```
+
+### 10.14 Usuários com mais pedidos de amizade pendentes (GROUP BY + filtro por enum)
+```sql
+SELECT u."id", u."name", COUNT(f."id") AS "pendentes"
+FROM "User" u
+INNER JOIN "Friendship" f ON f."addresseeId" = u."id"
+WHERE f."status" = 'PENDING'
+GROUP BY u."id", u."name"
+ORDER BY "pendentes" DESC
+LIMIT 10;
+```
+
+### 10.15 Engajamento de um post (curtidas + comentários em uma linha)
 ```sql
 SELECT p."id",
        (SELECT COUNT(*) FROM "Like"    l WHERE l."postId" = p."id") AS "curtidas",
@@ -1131,7 +1458,7 @@ WHERE p."id" = $1;
 
 ---
 
-## 10. Resumo — mapa ORM → SQL
+## 11. Resumo — mapa ORM → SQL
 
 | Construção Prisma | SQL equivalente |
 |---|---|
@@ -1158,6 +1485,8 @@ WHERE p."id" = $1;
 | `@default(uuid())` | `DEFAULT uuid_generate_v4()::TEXT` |
 | `@@unique([a, b])` | `CONSTRAINT ... UNIQUE ("a", "b")` |
 | `@@index([a, b])` | `CREATE INDEX ... ON "T" ("a", "b")` |
+| `enum X { A B }` | `CREATE TYPE "X" AS ENUM ('A', 'B')` |
+| `@relation("Nome", ...)` duplicada | duas FKs para a mesma tabela (auto-relacionamento) |
 | erro `P2002` | violação de UNIQUE (SQLSTATE `23505`) |
 | erro `P2003` | violação de FOREIGN KEY (SQLSTATE `23503`) |
 | erro `P2025` | `UPDATE`/`DELETE` que não atingiu nenhuma linha |

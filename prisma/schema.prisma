@@ -22,6 +22,8 @@ model User {
   articles  Article[]
   likes     Like[]
   comments  Comment[]
+  sentRequests     Friendship[] @relation("FriendshipRequester")
+  receivedRequests Friendship[] @relation("FriendshipAddressee")
 }
 
 model Post {
@@ -58,6 +60,25 @@ model Comment {
 
   @@index([postId, createdAt])
   @@index([userId, createdAt])
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+}
+
+model Friendship {
+  id          String           @id @default(uuid())
+  requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  requesterId String
+  addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  addresseeId String
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status, createdAt])
+  @@index([requesterId, status, createdAt])
 }
 
 model Complaint {

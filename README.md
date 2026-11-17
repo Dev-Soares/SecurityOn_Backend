@@ -1,6 +1,6 @@
 # SecurityOn — Backend
 
-API REST do projeto **SecurityOn**, uma plataforma comunitária de segurança digital onde usuários podem compartilhar posts, fazer denúncias de golpes/fraudes e publicar artigos informativos. Posts podem receber curtidas e comentários.
+API REST do projeto **SecurityOn**, uma plataforma comunitária de segurança digital onde usuários podem compartilhar posts, fazer denúncias de golpes/fraudes e publicar artigos informativos. Posts podem receber curtidas e comentários, e os usuários podem se conectar por pedidos de amizade.
 
 Construída com **NestJS**, **PostgreSQL** e **Prisma**, com autenticação JWT via cookies HTTP-only.
 
@@ -26,6 +26,7 @@ Construída com **NestJS**, **PostgreSQL** e **Prisma**, com autenticação JWT 
   - [Article](#article)
   - [Like (Curtidas)](#like-curtidas)
   - [Comment (Comentários)](#comment-comentários)
+  - [Friendship (Amizades)](#friendship-amizades)
   - [Health](#health)
 - [Paginação](#paginação)
 - [Autenticação](#autenticação)
@@ -68,6 +69,7 @@ src/
     ├── comment/                     # Comentários em posts
     ├── complaint/                   # Denúncias de golpes e fraudes
     ├── database/                    # PrismaService (conexão com o banco)
+    ├── friendship/                  # Pedidos de amizade e lista de amigos
     ├── health/                      # Health check
     ├── like/                        # Curtidas em posts
     ├── post/                        # Posts da comunidade
@@ -189,10 +191,17 @@ Complaint   → id, title, content, danger, store?, link?, userId, createdAt
 Article     → id, title, content, bgUrl?, userId, createdAt
 Like        → id, userId, postId, createdAt            (UNIQUE userId + postId)
 Comment     → id, content, userId, postId, createdAt
+Friendship  → id, requesterId, addresseeId, status, createdAt
+                                                        (UNIQUE requesterId + addresseeId)
 ```
 
+`Friendship.status` é um enum: `PENDING` (pedido enviado, aguardando resposta) ou
+`ACCEPTED` (amizade confirmada). Recusar, cancelar ou desfazer amizade apaga a linha —
+não existe status `REJECTED`.
+
 Todas as FKs usam `ON DELETE CASCADE`. Logo, apagar um post apaga suas curtidas e
-comentários, e apagar um usuário apaga seu conteúdo, suas curtidas e seus comentários.
+comentários, e apagar um usuário apaga seu conteúdo, suas curtidas, seus comentários e
+todas as suas amizades.
 
 ---
 
@@ -553,6 +562,84 @@ Comentários valem para **posts** e são uma lista plana (não há resposta a co
 
 ---
 
+### Friendship (Amizades)
+
+Fluxo de pedido de amizade em duas etapas: o remetente envia (`PENDING`) e o
+destinatário aceita (`ACCEPTED`).
+
+| Método | Rota | Autenticação | Descrição |
+|---|---|---|---|
+| `POST` | `/friendship` | Obrigatória | Envia um pedido de amizade |
+| `GET` | `/friendship/requests/received` | Obrigatória | Pedidos pendentes recebidos (paginado) |
+| `GET` | `/friendship/requests/sent` | Obrigatória | Pedidos pendentes enviados (paginado) |
+| `GET` | `/friendship/status/:id` | Obrigatória | Relação entre o usuário logado e o usuário `:id` |
+| `GET` | `/friendship/all/:id` | Não | Lista de amigos de um usuário (paginado) |
+| `PATCH` | `/friendship/:id/accept` | Obrigatória | Aceita o pedido (somente o destinatário) |
+| `DELETE` | `/friendship/:id` | Obrigatória | Cancela, recusa ou desfaz a amizade |
+
+**Body para enviar pedido:**
+```json
+{
+  "addresseeId": "uuid-do-usuario"
+}
+```
+
+**Resposta de `GET /friendship/all/:id`** — já resolve qual dos dois lados é o amigo:
+```json
+{
+  "data": [
+    {
+      "friendshipId": "uuid-da-amizade",
+      "friendsSince": "2026-11-17T12:00:00.000Z",
+      "user": { "id": "uuid-do-amigo", "name": "Maria Souza" }
+    }
+  ],
+  "nextCursor": null,
+  "hasNextPage": false
+}
+```
+
+**Resposta de `GET /friendship/status/:id`:**
+```json
+{
+  "userId": "uuid-do-outro-usuario",
+  "relation": "pending_received",
+  "friendshipId": "uuid-da-amizade"
+}
+```
+
+Valores possíveis de `relation`:
+
+| Valor | Significado |
+|---|---|
+| `self` | O `:id` consultado é o próprio usuário logado |
+| `none` | Não existe nenhuma relação entre os dois |
+| `pending_sent` | O usuário logado enviou um pedido e aguarda resposta |
+| `pending_received` | O outro usuário enviou um pedido ao usuário logado |
+| `friends` | Amizade aceita |
+
+> `friendshipId` é `null` quando `relation` é `self` ou `none`.
+
+**O `DELETE` cobre três situações**, porque qualquer um dos dois lados da relação pode
+remover a linha:
+
+| Situação | Quem chama | Estado da amizade |
+|---|---|---|
+| Cancelar pedido enviado | Remetente | `PENDING` |
+| Recusar pedido recebido | Destinatário | `PENDING` |
+| Desfazer amizade | Qualquer um dos dois | `ACCEPTED` |
+
+**Erros específicos:**
+
+| Status | Quando |
+|---|---|
+| `400 Bad Request` | Pedido de amizade para si mesmo |
+| `404 Not Found` | Usuário de destino inexistente, ou amizade/pedido inexistente |
+| `409 Conflict` | Já são amigos, pedido já enviado, pedido já existe no sentido inverso, ou pedido já aceito |
+| `401 Unauthorized` | Aceitar um pedido do qual não é destinatário, ou remover amizade da qual não participa |
+
+---
+
 ### Health
 
 | Método | Rota | Autenticação | Descrição |
@@ -570,7 +657,9 @@ Comentários valem para **posts** e são uma lista plana (não há resposta a co
 
 Todos os endpoints de listagem usam **paginação por cursor**: `GET /post`, `GET /complaint`,
 `GET /article` e suas variantes por usuário, além de `GET /like/all/:postId`,
-`GET /like/user/:id`, `GET /comment/all/:postId` e `GET /comment/user/:id`.
+`GET /like/user/:id`, `GET /comment/all/:postId`, `GET /comment/user/:id`,
+`GET /friendship/all/:id`, `GET /friendship/requests/received` e
+`GET /friendship/requests/sent`.
 
 ### Query params disponíveis
 
@@ -627,9 +716,10 @@ A autenticação é baseada em **JWT armazenado em cookie HTTP-only**.
 
 Rotas de edição e exclusão verificam se o `userId` do token corresponde ao dono do recurso. Caso contrário, retorna `401 Unauthorized`.
 
-Uma exceção, por ser recurso de relação entre usuários:
+Duas exceções, por serem recursos de relação entre usuários:
 
 - `DELETE /comment/:id` aceita o autor do comentário **ou** o autor do post comentado (moderação).
+- `PATCH /friendship/:id/accept` aceita somente o destinatário do pedido, e `DELETE /friendship/:id` aceita qualquer um dos dois lados da relação.
 
 ---
 
