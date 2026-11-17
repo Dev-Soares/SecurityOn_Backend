@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { PostQueryRow, PostWithCounts } from './types/post-types';
 
-const counts = { _count: { select: { likes: true } } };
+const counts = { _count: { select: { likes: true, comments: true } } };
 
 // Include das rotas de leitura de post.
 // Para usuário autenticado acrescenta a relação likes filtrada por ele, com take 1:

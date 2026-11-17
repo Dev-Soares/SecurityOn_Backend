@@ -2,6 +2,7 @@ import { Post } from '@prisma/client';
 
 export type PostCounts = {
   likes: number;
+  comments: number;
 };
 
 // Resposta das rotas de leitura de post.

@@ -1,6 +1,6 @@
 # SecurityOn — Backend
 
-API REST do projeto **SecurityOn**, uma plataforma comunitária de segurança digital onde usuários podem compartilhar posts, fazer denúncias de golpes/fraudes e publicar artigos informativos. Posts podem receber curtidas.
+API REST do projeto **SecurityOn**, uma plataforma comunitária de segurança digital onde usuários podem compartilhar posts, fazer denúncias de golpes/fraudes e publicar artigos informativos. Posts podem receber curtidas e comentários.
 
 Construída com **NestJS**, **PostgreSQL** e **Prisma**, com autenticação JWT via cookies HTTP-only.
 
@@ -25,6 +25,7 @@ Construída com **NestJS**, **PostgreSQL** e **Prisma**, com autenticação JWT 
   - [Complaint (Denúncias)](#complaint-denúncias)
   - [Article](#article)
   - [Like (Curtidas)](#like-curtidas)
+  - [Comment (Comentários)](#comment-comentários)
   - [Health](#health)
 - [Paginação](#paginação)
 - [Autenticação](#autenticação)
@@ -64,6 +65,7 @@ src/
 └── modules/
     ├── auth/                        # Login e logout
     ├── article/                     # Artigos informativos
+    ├── comment/                     # Comentários em posts
     ├── complaint/                   # Denúncias de golpes e fraudes
     ├── database/                    # PrismaService (conexão com o banco)
     ├── health/                      # Health check
@@ -186,10 +188,11 @@ Post        → id, content, imgUrl?, userId, createdAt
 Complaint   → id, title, content, danger, store?, link?, userId, createdAt
 Article     → id, title, content, bgUrl?, userId, createdAt
 Like        → id, userId, postId, createdAt            (UNIQUE userId + postId)
+Comment     → id, content, userId, postId, createdAt
 ```
 
-Todas as FKs usam `ON DELETE CASCADE`. Logo, apagar um post apaga suas curtidas, e
-apagar um usuário apaga seu conteúdo e suas curtidas.
+Todas as FKs usam `ON DELETE CASCADE`. Logo, apagar um post apaga suas curtidas e
+comentários, e apagar um usuário apaga seu conteúdo, suas curtidas e seus comentários.
 
 ---
 
@@ -379,8 +382,8 @@ O acesso é protegido por autenticação básica (Basic Auth). Use as credenciai
 ```
 
 As rotas de leitura (`GET /post`, `GET /post/all/:id` e `GET /post/:id`) usam
-**autenticação opcional** e já devolvem tudo que um feed precisa — o total de curtidas
-**e** se o usuário logado curtiu — em uma única query por requisição:
+**autenticação opcional** e já devolvem tudo que um feed precisa — totais de curtidas e
+comentários **e** se o usuário logado curtiu — em uma única query por requisição:
 
 ```json
 {
@@ -389,7 +392,7 @@ As rotas de leitura (`GET /post`, `GET /post/all/:id` e `GET /post/:id`) usam
   "imgUrl": null,
   "userId": "uuid-do-autor",
   "createdAt": "2026-11-17T12:00:00.000Z",
-  "_count": { "likes": 12 },
+  "_count": { "likes": 12, "comments": 3 },
   "liked": true
 }
 ```
@@ -513,6 +516,43 @@ requisição extra depois de curtir ou descurtir:
 
 ---
 
+### Comment (Comentários)
+
+Comentários valem para **posts** e são uma lista plana (não há resposta a comentário).
+
+| Método | Rota | Autenticação | Descrição |
+|---|---|---|---|
+| `POST` | `/comment` | Obrigatória | Cria um comentário em um post |
+| `GET` | `/comment/all/:postId` | Não | Lista os comentários de um post (paginado) |
+| `GET` | `/comment/user/:id` | Não | Lista os comentários de um usuário (paginado) |
+| `GET` | `/comment/:id` | Não | Busca um comentário por ID |
+| `PATCH` | `/comment/:id` | Obrigatória | Edita o comentário (somente o autor) |
+| `DELETE` | `/comment/:id` | Obrigatória | Remove o comentário (autor do comentário **ou** autor do post) |
+
+**Body para comentar:**
+```json
+{
+  "postId": "uuid-do-post",
+  "content": "Conteúdo do comentário (máx. 2000 caracteres)"
+}
+```
+
+**Body para editar** (apenas `content` — o post de destino não muda):
+```json
+{
+  "content": "Conteúdo corrigido"
+}
+```
+
+> `GET /comment/all/:postId` inclui o autor de cada comentário (`user: { id, name }`),
+> no mesmo formato de `GET /like/all/:postId`.
+
+> **Moderação:** o `DELETE` aceita tanto o autor do comentário quanto o autor do post
+> comentado, para que o dono do post possa remover comentários indevidos. O `PATCH`
+> continua restrito ao autor do comentário.
+
+---
+
 ### Health
 
 | Método | Rota | Autenticação | Descrição |
@@ -529,8 +569,8 @@ requisição extra depois de curtir ou descurtir:
 ## Paginação
 
 Todos os endpoints de listagem usam **paginação por cursor**: `GET /post`, `GET /complaint`,
-`GET /article` e suas variantes por usuário, além de
-`GET /like/all/:postId` e `GET /like/user/:id`.
+`GET /article` e suas variantes por usuário, além de `GET /like/all/:postId`,
+`GET /like/user/:id`, `GET /comment/all/:postId` e `GET /comment/user/:id`.
 
 ### Query params disponíveis
 
@@ -586,6 +626,10 @@ A autenticação é baseada em **JWT armazenado em cookie HTTP-only**.
 ### Autorização de recursos
 
 Rotas de edição e exclusão verificam se o `userId` do token corresponde ao dono do recurso. Caso contrário, retorna `401 Unauthorized`.
+
+Uma exceção, por ser recurso de relação entre usuários:
+
+- `DELETE /comment/:id` aceita o autor do comentário **ou** o autor do post comentado (moderação).
 
 ---
 
