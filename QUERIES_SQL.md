@@ -1,10 +1,10 @@
-# SecurityOn Backend — Queries Prisma traduzidas para SQL
+﻿# SecurityOn Backend — Queries Prisma traduzidas para SQL
 
 Documento acadêmico. Cada query do ORM (Prisma) usada no projeto está traduzida para
 o SQL equivalente em **PostgreSQL** (`provider = "postgresql"` em `prisma/schema.prisma`).
 
 > Observação: o Prisma faz *quoting* de identificadores em PascalCase, então as tabelas
-> são referenciadas como `"User"`, `"Post"`, `"Complaint"`, `"Article"`.
+> são referenciadas como `"User"`, `"Post"`, `"Complaint"`, `"Article"` e `"Like"`.
 
 ---
 
@@ -58,6 +58,21 @@ CREATE TABLE "Article" (
         REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+CREATE TABLE "Like" (
+    "id"        TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+    "userId"    TEXT NOT NULL,
+    "postId"    TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Like_userId_postId_key" UNIQUE ("userId", "postId"),
+    CONSTRAINT "Like_userId_fkey" FOREIGN KEY ("userId")
+        REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Like_postId_fkey" FOREIGN KEY ("postId")
+        REFERENCES "Post"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- Índices criados pela migration (declarados com @@index no schema)
+CREATE INDEX "Like_postId_createdAt_idx"    ON "Like"    ("postId", "createdAt");
+
 -- Índices recomendados para as consultas paginadas por usuário
 CREATE INDEX "Post_userId_createdAt_idx"      ON "Post"      ("userId", "createdAt" DESC);
 CREATE INDEX "Complaint_userId_createdAt_idx" ON "Complaint" ("userId", "createdAt" DESC);
@@ -68,13 +83,19 @@ CREATE INDEX "Article_userId_createdAt_idx"   ON "Article"   ("userId", "created
 
 | Tabela | PK | FK | Cardinalidade |
 |---|---|---|---|
-| `User` | `id` | — | 1 : N com Post, Complaint e Article |
+| `User` | `id` | — | 1 : N com Post, Complaint, Article e Like |
 | `Post` | `id` | `userId → User.id` | N : 1 |
 | `Complaint` | `id` | `userId → User.id` | N : 1 |
 | `Article` | `id` | `userId → User.id` | N : 1 |
+| `Like` | `id` | `userId → User.id`, `postId → Post.id` | tabela associativa N : N entre User e Post |
 
 Todas as FKs usam `ON DELETE CASCADE`: apagar um usuário apaga seus posts,
-denúncias e artigos.
+denúncias, artigos e curtidas; apagar um post apaga as curtidas daquele post.
+
+Um detalhe de modelagem vale destaque:
+
+- **`Like` é uma tabela associativa pura** (User ↔ Post) com `UNIQUE ("userId","postId")`.
+  É a constraint UNIQUE que impede curtida duplicada — não há checagem na aplicação.
 
 ---
 
@@ -233,44 +254,38 @@ this.prisma.post.findMany({
   cursor: dto.cursor ? { id: dto.cursor } : undefined,
   skip: dto.cursor ? 1 : 0,
   orderBy: { createdAt: 'desc' },
+  include: {
+    _count: { select: { likes: true } },
+    likes: { where: likedBy(userId), select: { id: true }, take: 1 },
+  },
 });
 ```
 
 **SQL — primeira página (sem cursor)**
 ```sql
-SELECT "id", "content", "userId", "imgUrl", "createdAt"
-FROM "Post"
-ORDER BY "createdAt" DESC
-LIMIT $1;          -- $1 = take + 1
-```
-
-**SQL — páginas seguintes (com cursor)**
-
-O Prisma implementa cursor + `skip: 1` como "posicione-se no registro do cursor e
-pule-o". Em SQL puro, o equivalente é filtrar pelo `createdAt` do cursor:
-
-```sql
-SELECT p."id", p."content", p."userId", p."imgUrl", p."createdAt"
+SELECT p."id", p."content", p."userId", p."imgUrl", p."createdAt",
+       (SELECT COUNT(*) FROM "Like" l WHERE l."postId" = p."id") AS "likes",
+       EXISTS (
+           SELECT 1 FROM "Like" l
+           WHERE l."postId" = p."id" AND l."userId" = $2
+       ) AS "liked"
 FROM "Post" p
-WHERE p."createdAt" < (SELECT c."createdAt" FROM "Post" c WHERE c."id" = $2)
 ORDER BY p."createdAt" DESC
-LIMIT $1;          -- $1 = take + 1, $2 = cursor
+LIMIT $1;          -- $1 = take + 1, $2 = usuário logado (NULL se anônimo)
 ```
 
-Versão robusta contra empates de `createdAt` (comparação de tupla — *keyset pagination*):
-
-```sql
-SELECT p."id", p."content", p."userId", p."imgUrl", p."createdAt"
-FROM "Post" p, (SELECT "createdAt", "id" FROM "Post" WHERE "id" = $2) AS cur
-WHERE (p."createdAt", p."id") < (cur."createdAt", cur."id")
-ORDER BY p."createdAt" DESC, p."id" DESC
-LIMIT $1;
-```
-
-> Truque do `take + 1`: busca-se um registro a mais que o pedido. Se vierem
-> `take + 1` linhas, existe próxima página (`hasNextPage = true`); a linha extra é
-> descartada e o `id` da última linha mantida vira o `nextCursor`.
-> O serviço também rejeita `limit >= 100` antes de chegar ao banco.
+> Duas informações numa única query: a contagem vem do `include: { _count: ... }`
+> (subconsulta correlacionada) e o `liked` vem da relação `likes` filtrada pelo usuário
+> logado com `take: 1`. O Prisma materializa essa relação como uma lista de no máximo um
+> item; o serviço a achata em booleano (`likes.length > 0`) e remove o array da resposta.
+>
+> **O filtro do usuário anônimo não pode ser `{ userId: undefined }`**: em Prisma,
+> `undefined` significa *"sem filtro"*, então viria a curtida de qualquer pessoa e `liked`
+> sairia `true` indevidamente. O helper `likedBy` devolve `{ id: { in: [] } }` nesse caso —
+> um predicado que nunca casa, equivalente a `WHERE FALSE`:
+> ```sql
+> EXISTS (SELECT 1 FROM "Like" l WHERE l."postId" = p."id" AND l."id" IN ()) AS "liked"
+> ```
 
 ### 4.3 `findByUser` — Posts de um usuário, paginados
 
@@ -282,17 +297,29 @@ this.prisma.post.findMany({
   skip: dto.cursor ? 1 : 0,
   orderBy: { createdAt: 'desc' },
   where: { userId: id },
+  include: {
+    _count: { select: { likes: true } },
+    likes: { where: likedBy(userId), select: { id: true }, take: 1 },
+  },
 });
 ```
 
 **SQL — primeira página**
 ```sql
-SELECT "id", "content", "userId", "imgUrl", "createdAt"
-FROM "Post"
-WHERE "userId" = $2
-ORDER BY "createdAt" DESC
+SELECT p."id", p."content", p."userId", p."imgUrl", p."createdAt",
+       (SELECT COUNT(*) FROM "Like" l WHERE l."postId" = p."id") AS "likes",
+       EXISTS (
+           SELECT 1 FROM "Like" l
+           WHERE l."postId" = p."id" AND l."userId" = $3
+       ) AS "liked"
+FROM "Post" p
+WHERE p."userId" = $2
+ORDER BY p."createdAt" DESC
 LIMIT $1;
 ```
+> Aqui `$2` e `$3` são usuários **diferentes**: `$2` é o dono do perfil visitado e `$3` é
+> quem está visitando. Confundir os dois faria todo post aparecer como curtido ao visitar
+> o próprio perfil.
 
 **SQL — com cursor**
 ```sql
@@ -308,16 +335,31 @@ LIMIT $1;
 
 **Prisma**
 ```ts
-this.prisma.post.findUnique({ where: { id } });
+this.prisma.post.findUnique({
+  where: { id },
+  include: {
+    _count: { select: { likes: true } },
+    likes: { where: likedBy(userId), select: { id: true }, take: 1 },
+  },
+});
 ```
 
 **SQL**
 ```sql
-SELECT "id", "content", "userId", "imgUrl", "createdAt"
-FROM "Post"
-WHERE "id" = $1
+SELECT p."id", p."content", p."userId", p."imgUrl", p."createdAt",
+       (SELECT COUNT(*) FROM "Like" l WHERE l."postId" = p."id") AS "likes",
+       EXISTS (
+           SELECT 1 FROM "Like" l
+           WHERE l."postId" = p."id" AND l."userId" = $2
+       ) AS "liked"
+FROM "Post" p
+WHERE p."id" = $1
 LIMIT 1;
 ```
+
+> `update` e `remove` (itens 4.5 e 4.6) continuam usando `findUnique` sem `include`:
+> a checagem de dono só precisa de `"userId"`, e contagens e `liked` seriam trabalho
+> jogado fora.
 
 ### 4.5 `update` — Atualizar post (com verificação de dono)
 
@@ -597,12 +639,165 @@ RETURNING "id", "bgUrl", "title", "content", "userId", "createdAt";
 
 ---
 
-## 7. Queries derivadas (não estão no código, mas o modelo permite)
+## 7. Módulo Like (`src/modules/like/like.service.ts`)
+
+### 7.1 `create` — Curtir post
+
+**Prisma** — `$transaction` com array: as duas operações rodam em ordem, numa única ida ao
+banco e na mesma transação, então o `count` já enxerga o `INSERT`.
+```ts
+this.prisma.$transaction([
+  this.prisma.like.create({ data: { postId: dto.postId, userId } }),
+  this.prisma.like.count({ where: { postId: dto.postId } }),
+]);
+```
+
+**SQL**
+```sql
+BEGIN;
+
+INSERT INTO "Like" ("id", "userId", "postId", "createdAt")
+VALUES (uuid_generate_v4()::TEXT, $1, $2, CURRENT_TIMESTAMP)
+RETURNING "id", "userId", "postId", "createdAt";
+
+SELECT COUNT(*) AS "total" FROM "Like" WHERE "postId" = $2;
+
+COMMIT;
+```
+> A mutação devolve `{ postId, total, liked: true }` em vez da linha inserida: é o estado
+> que o cliente precisa depois de curtir. Sem o `COUNT` na mesma transação, o total poderia
+> vir de um instante diferente do `INSERT`.
+>
+> Em SQL puro dá para fazer numa instrução só, com CTE:
+> ```sql
+> WITH inserida AS (
+>     INSERT INTO "Like" ("id", "userId", "postId", "createdAt")
+>     VALUES (uuid_generate_v4()::TEXT, $1, $2, CURRENT_TIMESTAMP)
+>     RETURNING "postId"
+> )
+> SELECT i."postId", COUNT(l."id") AS "total", TRUE AS "liked"
+> FROM inserida i
+> LEFT JOIN "Like" l ON l."postId" = i."postId"
+> GROUP BY i."postId";
+> ```
+>
+> Dois erros do Prisma são traduzidos aqui:
+> `P2002` (violação de `UNIQUE ("userId","postId")`, SQLSTATE `23505`) vira
+> `ConflictException('Você já curtiu este post')`, e `P2003` (violação da FK de `postId`,
+> SQLSTATE `23503`) vira `NotFoundException('Post não encontrado')`.
+>
+> Versão idempotente em SQL puro, que não estoura na curtida repetida:
+> ```sql
+> INSERT INTO "Like" ("id", "userId", "postId", "createdAt")
+> VALUES (uuid_generate_v4()::TEXT, $1, $2, CURRENT_TIMESTAMP)
+> ON CONFLICT ("userId", "postId") DO NOTHING
+> RETURNING "id", "userId", "postId", "createdAt";
+> ```
+> O serviço **não** usa essa versão de propósito: devolver `409` informa ao frontend que o
+> estado dele estava desatualizado.
+
+### 7.2 `findByPost` — Quem curtiu o post (paginado)
+
+**Prisma**
+```ts
+this.prisma.like.findMany({
+  take: take + 1,
+  cursor: dto.cursor ? { id: dto.cursor } : undefined,
+  skip: dto.cursor ? 1 : 0,
+  orderBy: { createdAt: 'desc' },
+  where: { postId },
+  include: { user: { select: { id: true, name: true } } },
+});
+```
+
+**SQL — primeira página**
+```sql
+SELECT l."id", l."userId", l."postId", l."createdAt",
+       u."id" AS "user.id", u."name" AS "user.name"
+FROM "Like" l
+INNER JOIN "User" u ON u."id" = l."userId"
+WHERE l."postId" = $2
+ORDER BY l."createdAt" DESC
+LIMIT $1;
+```
+> `include` de relação obrigatória (`userId` é `NOT NULL`) corresponde a `INNER JOIN`.
+> O Prisma monta o objeto `user` aninhado a partir das colunas do JOIN.
+
+**SQL — com cursor**
+```sql
+SELECT l."id", l."userId", l."postId", l."createdAt",
+       u."id" AS "user.id", u."name" AS "user.name"
+FROM "Like" l
+INNER JOIN "User" u ON u."id" = l."userId"
+WHERE l."postId" = $2
+  AND l."createdAt" < (SELECT x."createdAt" FROM "Like" x WHERE x."id" = $3)
+ORDER BY l."createdAt" DESC
+LIMIT $1;
+```
+
+### 7.3 `findByUser` — Curtidas de um usuário (paginado)
+
+**SQL**
+```sql
+SELECT "id", "userId", "postId", "createdAt"
+FROM "Like"
+WHERE "userId" = $2
+ORDER BY "createdAt" DESC
+LIMIT $1;
+```
+
+### 7.4 `remove` — Descurtir post
+
+**Prisma** — `deleteMany` + `count` numa só transação. `deleteMany` casa no par
+`("userId","postId")` sem precisar de um `findUnique` antes, e devolve a contagem de linhas
+afetadas em vez de lançar `P2025` quando não encontra nada.
+```ts
+this.prisma.$transaction([
+  this.prisma.like.deleteMany({ where: { userId, postId } }),
+  this.prisma.like.count({ where: { postId } }),
+]);
+```
+
+**SQL**
+```sql
+BEGIN;
+
+DELETE FROM "Like"
+WHERE "userId" = $2 AND "postId" = $1;      -- afeta 0 ou 1 linha (UNIQUE do par)
+
+SELECT COUNT(*) AS "total" FROM "Like" WHERE "postId" = $1;
+
+COMMIT;
+```
+> Zero linhas afetadas pelo `DELETE` = `404`. Não há `401` possível: a curtida localizada
+> pelo par `("userId","postId")` já é, por definição, a do próprio usuário.
+>
+> O `DELETE` sem `RETURNING` é intencional — a linha apagada não interessa, só a contagem
+> de afetadas (`deleted.count`) e o novo total. A mutação devolve
+> `{ postId, total, liked: false }`.
+>
+> Versão em instrução única, com CTE:
+> ```sql
+> WITH removida AS (
+>     DELETE FROM "Like"
+>     WHERE "userId" = $2 AND "postId" = $1
+>     RETURNING "postId"
+> )
+> SELECT $1 AS "postId",
+>        (SELECT COUNT(*) FROM "Like" WHERE "postId" = $1) AS "total",
+>        FALSE AS "liked",
+>        EXISTS (SELECT 1 FROM removida) AS "existia";
+> ```
+> `existia = false` é o `404`.
+
+---
+
+## 8. Queries derivadas (não estão no código, mas o modelo permite)
 
 Consultas que o schema torna possíveis — úteis para demonstrar JOIN, agregação e
 subconsulta em trabalho acadêmico.
 
-### 7.1 Posts com dados do autor (INNER JOIN)
+### 8.1 Posts com dados do autor (INNER JOIN)
 ```sql
 SELECT p."id", p."content", p."imgUrl", p."createdAt",
        u."id" AS "autorId", u."name" AS "autorNome"
@@ -612,7 +807,7 @@ ORDER BY p."createdAt" DESC
 LIMIT 10;
 ```
 
-### 7.2 Denúncias com autor, filtrando por nível de perigo
+### 8.2 Denúncias com autor, filtrando por nível de perigo
 ```sql
 SELECT c."title", c."danger", c."store", c."createdAt", u."name" AS "autor"
 FROM "Complaint" c
@@ -621,7 +816,7 @@ WHERE c."danger" = 'alto'
 ORDER BY c."createdAt" DESC;
 ```
 
-### 7.3 Contagem de conteúdo por usuário (agregação + LEFT JOIN)
+### 8.3 Contagem de conteúdo por usuário (agregação + LEFT JOIN)
 ```sql
 SELECT u."id", u."name", u."email",
        COUNT(DISTINCT p."id") AS "totalPosts",
@@ -635,7 +830,7 @@ GROUP BY u."id", u."name", u."email"
 ORDER BY "totalPosts" DESC;
 ```
 
-### 7.4 Denúncias agrupadas por nível de perigo
+### 8.4 Denúncias agrupadas por nível de perigo
 ```sql
 SELECT "danger", COUNT(*) AS "quantidade"
 FROM "Complaint"
@@ -643,7 +838,7 @@ GROUP BY "danger"
 ORDER BY "quantidade" DESC;
 ```
 
-### 7.5 Lojas mais denunciadas (GROUP BY + HAVING)
+### 8.5 Lojas mais denunciadas (GROUP BY + HAVING)
 ```sql
 SELECT "store", COUNT(*) AS "denuncias"
 FROM "Complaint"
@@ -654,7 +849,7 @@ ORDER BY "denuncias" DESC
 LIMIT 10;
 ```
 
-### 7.6 Usuários sem nenhum post (subconsulta com NOT EXISTS)
+### 8.6 Usuários sem nenhum post (subconsulta com NOT EXISTS)
 ```sql
 SELECT u."id", u."name", u."email"
 FROM "User" u
@@ -663,7 +858,7 @@ WHERE NOT EXISTS (
 );
 ```
 
-### 7.7 Feed unificado dos três tipos de conteúdo (UNION ALL)
+### 8.7 Feed unificado dos três tipos de conteúdo (UNION ALL)
 ```sql
 SELECT "id", 'post' AS "tipo", "content" AS "texto", "createdAt", "userId"
 FROM "Post"
@@ -677,7 +872,7 @@ ORDER BY "createdAt" DESC
 LIMIT 20;
 ```
 
-### 7.8 Último post de cada usuário (window function)
+### 8.8 Último post de cada usuário (window function)
 ```sql
 SELECT "id", "content", "userId", "createdAt"
 FROM (
@@ -688,7 +883,7 @@ FROM (
 WHERE rn = 1;
 ```
 
-### 7.9 Denúncias dos últimos 7 dias
+### 8.9 Denúncias dos últimos 7 dias
 ```sql
 SELECT "id", "title", "danger", "createdAt"
 FROM "Complaint"
@@ -696,7 +891,7 @@ WHERE "createdAt" >= CURRENT_TIMESTAMP - INTERVAL '7 days'
 ORDER BY "createdAt" DESC;
 ```
 
-### 7.10 Busca textual em artigos (ILIKE)
+### 8.10 Busca textual em artigos (ILIKE)
 ```sql
 SELECT "id", "title", "createdAt"
 FROM "Article"
@@ -706,16 +901,36 @@ ORDER BY "createdAt" DESC
 LIMIT 20;
 ```
 
+### 8.11 Posts mais curtidos (ranking com agregação)
+```sql
+SELECT p."id", p."content", u."name" AS "autor",
+       COUNT(l."id") AS "curtidas"
+FROM "Post" p
+INNER JOIN "User" u ON u."id" = p."userId"
+LEFT  JOIN "Like" l ON l."postId" = p."id"
+GROUP BY p."id", p."content", u."name"
+ORDER BY "curtidas" DESC
+LIMIT 10;
+```
+> `LEFT JOIN` em vez de `INNER`: posts sem curtida ainda aparecem, com `curtidas = 0`.
+
 ---
 
-## 8. Resumo — mapa ORM → SQL
+## 9. Resumo — mapa ORM → SQL
 
 | Construção Prisma | SQL equivalente |
 |---|---|
 | `create({ data })` | `INSERT INTO ... VALUES ... RETURNING` |
 | `findUnique({ where })` | `SELECT ... WHERE <coluna única> = $1 LIMIT 1` |
+| `findFirst({ where })` | `SELECT ... WHERE ... LIMIT 1` |
 | `findMany({ where })` | `SELECT ... WHERE ...` |
+| `count({ where })` | `SELECT COUNT(*) ... WHERE ...` |
+| `deleteMany({ where })` | `DELETE FROM ... WHERE ...` (devolve nº de afetadas, não lança `P2025`) |
+| `$transaction([a, b])` | `BEGIN; a; b; COMMIT;` — uma ida ao banco, `b` já vê `a` |
 | `select: { a: true }` | lista explícita de colunas no `SELECT` |
+| `include: { relacao: true }` | `INNER JOIN` (relação obrigatória) ou `LEFT JOIN` (opcional) |
+| `include: { _count: { select: { r: true } } }` | `(SELECT COUNT(*) FROM "R" WHERE ...)` correlacionado |
+| `where: { OR: [ ... ] }` | `WHERE (...) OR (...)` |
 | `orderBy: { campo: 'desc' }` | `ORDER BY "campo" DESC` |
 | `take: n` | `LIMIT n` |
 | `skip: n` | `OFFSET n` |
@@ -726,5 +941,8 @@ LIMIT 20;
 | `@relation(onDelete: Cascade)` | `FOREIGN KEY ... ON DELETE CASCADE` |
 | `@default(now())` | `DEFAULT CURRENT_TIMESTAMP` |
 | `@default(uuid())` | `DEFAULT uuid_generate_v4()::TEXT` |
+| `@@unique([a, b])` | `CONSTRAINT ... UNIQUE ("a", "b")` |
+| `@@index([a, b])` | `CREATE INDEX ... ON "T" ("a", "b")` |
 | erro `P2002` | violação de UNIQUE (SQLSTATE `23505`) |
+| erro `P2003` | violação de FOREIGN KEY (SQLSTATE `23503`) |
 | erro `P2025` | `UPDATE`/`DELETE` que não atingiu nenhuma linha |

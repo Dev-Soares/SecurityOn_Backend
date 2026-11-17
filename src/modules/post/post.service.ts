@@ -5,6 +5,8 @@ import { UpdatePostDto } from './dto/update-post.dto';
 import { Post, Prisma } from '@prisma/client';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
 import { PaginatedQuery } from 'src/common/types/query-types';
+import { PostWithCounts } from './types/post-types';
+import { postReadInclude, toPostWithCounts } from './post.mapper';
 
 @Injectable()
 export class PostService {
@@ -24,7 +26,7 @@ export class PostService {
     }
   }
 
-  async findByUser(dto: PaginationDto, id: string): Promise<PaginatedQuery<Post>> {
+  async findByUser(dto: PaginationDto, id: string, userId: string | null): Promise<PaginatedQuery<PostWithCounts>> {
 
     const take = Number(dto.limit) || 10;
 
@@ -36,7 +38,8 @@ export class PostService {
         cursor: dto.cursor ? { id: dto.cursor } : undefined,
         skip: dto.cursor ? 1 : 0,
         orderBy: { createdAt: 'desc' },
-        where: { userId: id}
+        where: { userId: id},
+        include: postReadInclude(userId)
       });
 
       const hasNextPage = searchedPosts.length > take;
@@ -44,7 +47,7 @@ export class PostService {
       const finalItem = posts[posts.length - 1];
 
       return {
-        data: posts,
+        data: posts.map(toPostWithCounts),
         nextCursor: hasNextPage ? finalItem.id : null,
         hasNextPage: hasNextPage
       };
@@ -53,7 +56,7 @@ export class PostService {
     }
   }
 
-  async findAll(dto: PaginationDto): Promise<PaginatedQuery<Post>> {
+  async findAll(dto: PaginationDto, userId: string | null): Promise<PaginatedQuery<PostWithCounts>> {
 
     const take = Number(dto.limit) || 10;
 
@@ -65,6 +68,7 @@ export class PostService {
         cursor: dto.cursor ? { id: dto.cursor } : undefined,
         skip: dto.cursor ? 1 : 0,
         orderBy: { createdAt: 'desc' },
+        include: postReadInclude(userId)
       });
 
       const hasNextPage = searchedPosts.length > take;
@@ -72,7 +76,7 @@ export class PostService {
       const finalItem = posts[posts.length - 1];
 
       return {
-        data: posts,
+        data: posts.map(toPostWithCounts),
         nextCursor: hasNextPage ? finalItem.id : null,
         hasNextPage: hasNextPage
       };
@@ -81,15 +85,16 @@ export class PostService {
     }
   }
 
-  async findOne(id: string): Promise<Post> {
+  async findOne(id: string, userId: string | null): Promise<PostWithCounts> {
     try{
       const post = await this.prisma.post.findUnique({
-        where: { id }
+        where: { id },
+        include: postReadInclude(userId)
       });
       if (!post) {
         throw new NotFoundException('Post não encontrado');
       }
-      return post;
+      return toPostWithCounts(post);
     } catch(error){
       if (error instanceof NotFoundException) throw error;
       throw new InternalServerErrorException('Erro ao buscar post');

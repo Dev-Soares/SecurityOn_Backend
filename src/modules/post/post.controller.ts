@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, Req, Query } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { AuthGuard } from 'src/common/guards/auth/auth.guard';
+import { OptionalAuthGuard } from 'src/common/guards/auth/optionalAuth.guard';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
-import type { AuthenticatedRequest } from 'src/common/types/req-types';
+import type { AuthenticatedRequest, OptionalAuthRequest } from 'src/common/types/req-types';
 
 @Controller('post')
 export class PostController {
@@ -17,18 +18,21 @@ export class PostController {
   }
 
   @Get()
-  findAll(@Query() query: PaginationDto) {
-    return this.postService.findAll(query);
+  @UseGuards(OptionalAuthGuard)
+  findAll(@Query() query: PaginationDto, @Req() req: OptionalAuthRequest) {
+    return this.postService.findAll(query, req.user ? req.user.sub : null);
   }
 
   @Get('all/:id')
-  findByUser(@Query() query: PaginationDto ,@Param('id') id: string) {
-    return this.postService.findByUser(query,id);
+  @UseGuards(OptionalAuthGuard)
+  findByUser(@Query() query: PaginationDto ,@Param('id') id: string, @Req() req: OptionalAuthRequest) {
+    return this.postService.findByUser(query,id, req.user ? req.user.sub : null);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.postService.findOne(id);
+  @UseGuards(OptionalAuthGuard)
+  findOne(@Param('id') id: string, @Req() req: OptionalAuthRequest) {
+    return this.postService.findOne(id, req.user ? req.user.sub : null);
   }
 
   @Patch(':id')

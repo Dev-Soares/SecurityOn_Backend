@@ -1,6 +1,6 @@
 # SecurityOn — Backend
 
-API REST do projeto **SecurityOn**, uma plataforma comunitária de segurança digital onde usuários podem compartilhar posts, fazer denúncias de golpes/fraudes e publicar artigos informativos.
+API REST do projeto **SecurityOn**, uma plataforma comunitária de segurança digital onde usuários podem compartilhar posts, fazer denúncias de golpes/fraudes e publicar artigos informativos. Posts podem receber curtidas.
 
 Construída com **NestJS**, **PostgreSQL** e **Prisma**, com autenticação JWT via cookies HTTP-only.
 
@@ -24,6 +24,7 @@ Construída com **NestJS**, **PostgreSQL** e **Prisma**, com autenticação JWT 
   - [Post](#post)
   - [Complaint (Denúncias)](#complaint-denúncias)
   - [Article](#article)
+  - [Like (Curtidas)](#like-curtidas)
   - [Health](#health)
 - [Paginação](#paginação)
 - [Autenticação](#autenticação)
@@ -66,6 +67,7 @@ src/
     ├── complaint/                   # Denúncias de golpes e fraudes
     ├── database/                    # PrismaService (conexão com o banco)
     ├── health/                      # Health check
+    ├── like/                        # Curtidas em posts
     ├── post/                        # Posts da comunidade
     └── user/                        # Gerenciamento de usuários
 
@@ -183,7 +185,11 @@ User        → id, name, email, password
 Post        → id, content, imgUrl?, userId, createdAt
 Complaint   → id, title, content, danger, store?, link?, userId, createdAt
 Article     → id, title, content, bgUrl?, userId, createdAt
+Like        → id, userId, postId, createdAt            (UNIQUE userId + postId)
 ```
+
+Todas as FKs usam `ON DELETE CASCADE`. Logo, apagar um post apaga suas curtidas, e
+apagar um usuário apaga seu conteúdo e suas curtidas.
 
 ---
 
@@ -358,9 +364,9 @@ O acesso é protegido por autenticação básica (Basic Auth). Use as credenciai
 | Método | Rota | Autenticação | Descrição |
 |---|---|---|---|
 | `POST` | `/post` | Obrigatória | Cria um novo post |
-| `GET` | `/post` | Não | Lista todos os posts (paginado) |
-| `GET` | `/post/all/:id` | Não | Lista posts de um usuário específico (paginado) |
-| `GET` | `/post/:id` | Não | Busca um post por ID |
+| `GET` | `/post` | Opcional | Lista todos os posts (paginado) |
+| `GET` | `/post/all/:id` | Opcional | Lista posts de um usuário específico (paginado) |
+| `GET` | `/post/:id` | Opcional | Busca um post por ID |
 | `PATCH` | `/post/:id` | Obrigatória | Atualiza um post (somente o autor) |
 | `DELETE` | `/post/:id` | Obrigatória | Remove um post (somente o autor) |
 
@@ -371,6 +377,27 @@ O acesso é protegido por autenticação básica (Basic Auth). Use as credenciai
   "imgUrl": "https://exemplo.com/imagem.png"
 }
 ```
+
+As rotas de leitura (`GET /post`, `GET /post/all/:id` e `GET /post/:id`) usam
+**autenticação opcional** e já devolvem tudo que um feed precisa — o total de curtidas
+**e** se o usuário logado curtiu — em uma única query por requisição:
+
+```json
+{
+  "id": "uuid-do-post",
+  "content": "Conteúdo do post",
+  "imgUrl": null,
+  "userId": "uuid-do-autor",
+  "createdAt": "2026-11-17T12:00:00.000Z",
+  "_count": { "likes": 12 },
+  "liked": true
+}
+```
+
+> Sem cookie de autenticação, `liked` vem sempre `false`.
+>
+> É por isso que não existe uma rota separada de status de curtida: o feed já chega
+> pronto, e `POST /like` / `DELETE /like/:postId` devolvem o novo total.
 
 ---
 
@@ -423,6 +450,69 @@ O acesso é protegido por autenticação básica (Basic Auth). Use as credenciai
 
 ---
 
+### Like (Curtidas)
+
+Curtidas valem para **posts**. Um usuário pode curtir o mesmo post apenas uma vez.
+
+| Método | Rota | Autenticação | Descrição |
+|---|---|---|---|
+| `POST` | `/like` | Obrigatória | Curte um post |
+| `DELETE` | `/like/:postId` | Obrigatória | Descurte o post (remove a própria curtida) |
+| `GET` | `/like/all/:postId` | Não | Lista quem curtiu um post (paginado) |
+| `GET` | `/like/user/:id` | Não | Lista as curtidas de um usuário (paginado) |
+
+**Body para curtir:**
+```json
+{
+  "postId": "uuid-do-post"
+}
+```
+
+**As duas mutações devolvem o estado já atualizado**, para o cliente não precisar de uma
+requisição extra depois de curtir ou descurtir:
+```json
+{
+  "postId": "uuid-do-post",
+  "total": 13,
+  "liked": true
+}
+```
+> `liked` é `true` no `POST` e `false` no `DELETE`; `total` é a contagem após a operação.
+> As duas rodam em uma única ida ao banco (`$transaction`), então o `total` nunca fica
+> defasado em relação à escrita que acabou de acontecer.
+
+> **Não existe rota de leitura de status.** Para saber se o usuário logado curtiu um post,
+> use `GET /post`, `GET /post/all/:id` ou `GET /post/:id` — todas já devolvem `liked` e
+> `_count.likes` na mesma query do post. Uma rota `GET /like/status/:postId` seria um
+> subconjunto estrito dessa resposta com o dobro de queries, e um feed de 20 posts
+> precisaria chamá-la 20 vezes.
+
+**Resposta de `GET /like/all/:postId`:** cada item inclui o autor da curtida.
+```json
+{
+  "data": [
+    {
+      "id": "uuid-da-curtida",
+      "userId": "uuid-do-usuario",
+      "postId": "uuid-do-post",
+      "createdAt": "2026-11-17T12:00:00.000Z",
+      "user": { "id": "uuid-do-usuario", "name": "João Silva" }
+    }
+  ],
+  "nextCursor": null,
+  "hasNextPage": false
+}
+```
+
+**Erros específicos:**
+
+| Status | Quando |
+|---|---|
+| `409 Conflict` | O usuário já curtiu este post |
+| `404 Not Found` | Post inexistente (no `POST`) ou curtida inexistente (no `DELETE`) |
+
+---
+
 ### Health
 
 | Método | Rota | Autenticação | Descrição |
@@ -438,7 +528,9 @@ O acesso é protegido por autenticação básica (Basic Auth). Use as credenciai
 
 ## Paginação
 
-Todos os endpoints de listagem (`GET /post`, `GET /complaint`, `GET /article` e suas variantes por usuário) usam **paginação por cursor**.
+Todos os endpoints de listagem usam **paginação por cursor**: `GET /post`, `GET /complaint`,
+`GET /article` e suas variantes por usuário, além de
+`GET /like/all/:postId` e `GET /like/user/:id`.
 
 ### Query params disponíveis
 
