@@ -8,9 +8,9 @@ export class CreateCommentDto {
   @IsUUID()
   postId: string;
 
-  @ApiProperty({ example: 'Comment content text' })
+  @ApiProperty({ example: 'Comment content text', maxLength: 500 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(2000)
+  @MaxLength(500, { message: 'O comentário deve ter no máximo 500 caracteres' })
   content: string;
 }
