@@ -96,6 +96,9 @@ export class UserService {
       return {
         ...rest,
         _count: {
+          posts: _count.posts,
+          complaints: _count.complaints,
+          articles: _count.articles,
           friends: _count.sentRequests + _count.receivedRequests,
         },
       };
