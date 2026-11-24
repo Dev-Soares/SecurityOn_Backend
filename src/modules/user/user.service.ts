@@ -70,7 +70,7 @@ export class UserService {
           name: true,
           email: true,
           // Os números do perfil saem na mesma query, como subconsultas de
-          // COUNT — não como findMany que o front teria de paginar só para
+          // COUNT, não como findMany que o front teria de paginar só para
           // escrever um total.
           //
           // Uma amizade é UMA linha, e o usuário pode estar em qualquer um dos

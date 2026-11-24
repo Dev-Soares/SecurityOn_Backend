@@ -18,7 +18,7 @@ export class LikeService {
   async create(dto: CreateLikeDto, userId: string): Promise<LikeStatus> {
     try {
       // $transaction com array roda as duas operações em ordem, numa única ida ao
-      // banco e na mesma transação — então o count já enxerga o insert.
+      // banco e na mesma transação, então o count já enxerga o insert.
       const [, total] = await this.prisma.$transaction([
         this.prisma.like.create({
           data: {
