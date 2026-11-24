@@ -35,7 +35,7 @@ const POSTS = [
   {
     author: 'carla@securityon.dev',
     content:
-      'Loja com preço 70% abaixo do mercado, CNPJ criado há 3 semanas e só aceitava Pix. Clássico golpe de e-commerce fantasma — não caiam.',
+      'Loja com preço 70% abaixo do mercado, CNPJ criado há 3 semanas e só aceitava Pix. Clássico golpe de e-commerce fantasma. Não caiam.',
     imgUrl: 'https://picsum.photos/seed/securityon-post-2/800/500',
   },
   {
@@ -127,12 +127,121 @@ const COMPLAINTS = [
   },
 ];
 
+// Dez denúncias contra o MESMO site, escritas como quem denuncia escreve: com e sem
+// protocolo, com www, com subdomínio, com caminho, query e caixa alta. Serve para testar
+// a busca por link (/check-site): qualquer variação de "promo-shopfacil.com" deve
+// devolver as dez. O último caso é de outro domínio parecido e NÃO pode aparecer.
+const SAME_SITE_COMPLAINTS = [
+  {
+    author: 'ana@securityon.dev',
+    title: 'Loja fantasma com desconto de 80% em eletrônicos',
+    content:
+      'Anúncio patrocinado no Instagram levando para a loja. Paguei por Pix, recebi código de rastreio falso e o chat foi desativado no dia seguinte.',
+    danger: 'critico',
+    store: 'Promo ShopFácil',
+    link: 'https://promo-shopfacil.com',
+  },
+  {
+    author: 'bruno@securityon.dev',
+    title: 'Checkout do site só aceita Pix para pessoa física',
+    content:
+      'O recebedor do Pix é um CPF, não a empresa anunciada. Site não tem CNPJ, endereço nem telefone em lugar nenhum das páginas.',
+    danger: 'critico',
+    store: 'Promo ShopFácil',
+    link: 'https://www.promo-shopfacil.com/checkout',
+  },
+  {
+    author: 'carla@securityon.dev',
+    title: 'Domínio registrado há 12 dias se passando por loja conhecida',
+    content:
+      'Consultei o WHOIS: domínio criado há menos de duas semanas. O layout é cópia pixel a pixel de uma varejista real, inclusive os selos de segurança (que são imagem, não link).',
+    danger: 'perigo',
+    store: 'Promo ShopFácil',
+    link: 'promo-shopfacil.com',
+  },
+  {
+    author: 'diego@securityon.dev',
+    title: 'Página de pagamento em subdomínio pedindo dados do cartão',
+    content:
+      'O formulário pede número, validade, CVV e ainda a senha do internet banking "para validar a compra". Nenhuma loja legítima pede senha de banco.',
+    danger: 'critico',
+    store: 'Promo ShopFácil',
+    link: 'https://pagamento.promo-shopfacil.com/finalizar',
+  },
+  {
+    author: 'elisa@securityon.dev',
+    title: 'Site sem HTTPS coletando CPF e endereço',
+    content:
+      'O cadastro roda em http puro. Qualquer pessoa na mesma rede consegue ler os dados enviados. Além disso o "Fale conosco" só devolve erro.',
+    danger: 'perigo',
+    store: 'Promo ShopFácil',
+    link: 'http://promo-shopfacil.com/cadastro',
+  },
+  {
+    author: 'ana@securityon.dev',
+    title: 'Falso rastreio com cobrança de taxa de liberação',
+    content:
+      'Depois da compra chegou um SMS com link do próprio site pedindo R$ 9,90 de "taxa alfandegária" para liberar o pedido. Pedido que nunca existiu.',
+    danger: 'perigo',
+    store: 'Promo ShopFácil',
+    link: 'https://promo-shopfacil.com/rastreio?pedido=99213',
+  },
+  {
+    author: 'bruno@securityon.dev',
+    title: 'Avaliações falsas copiadas de outra loja',
+    content:
+      'Os comentários da página de produto são os mesmos, na mesma ordem, de um marketplace real. Copiaram a seção inteira, inclusive as datas.',
+    danger: 'aviso',
+    store: 'Promo ShopFácil',
+    link: 'WWW.PROMO-SHOPFACIL.COM/produto/152',
+  },
+  {
+    author: 'carla@securityon.dev',
+    title: 'Suporte por WhatsApp insistindo em pagamento fora do site',
+    content:
+      'O atendimento pede para finalizar por Pix direto no WhatsApp, "para liberar o desconto". Fora da loja não há como contestar nada.',
+    danger: 'perigo',
+    store: 'Promo ShopFácil',
+    link: 'https://promo-shopfacil.com/suporte',
+  },
+  {
+    author: 'diego@securityon.dev',
+    title: 'Pedido nunca enviado e reembolso negado',
+    content:
+      'Trinta dias após a compra o status seguia "em separação". Pedi reembolso e a resposta foi que compras com desconto não são reembolsáveis, cláusula que não existe no site.',
+    danger: 'critico',
+    store: 'Promo ShopFácil',
+    link: 'https://promo-shopfacil.com/pedido/8831',
+  },
+  {
+    author: 'elisa@securityon.dev',
+    title: 'Mesma quadrilha operando em outro subdomínio',
+    content:
+      'Depois que a loja principal começou a receber denúncias, passaram a divulgar um subdomínio novo com o mesmo checkout e o mesmo CPF recebedor.',
+    danger: 'critico',
+    store: 'Promo ShopFácil',
+    link: 'https://loja2.promo-shopfacil.com/',
+  },
+];
+
+// Controle negativo: domínio parecido, site diferente. Uma busca por
+// "promo-shopfacil.com" não pode trazer esta denúncia.
+const LOOKALIKE_COMPLAINT = {
+  author: 'ana@securityon.dev',
+  title: 'Clone com nome parecido circulando por e-mail',
+  content:
+    'Outro domínio, quase igual ao da loja já denunciada, usado em disparo de e-mail. Vale registrar separado: é outro site.',
+  danger: 'perigo',
+  store: 'Promo ShopFacil Oficial',
+  link: 'https://promo-shopfacil.net/ofertas',
+};
+
 const ARTICLES = [
   {
     author: 'ana@securityon.dev',
     title: 'Como identificar um site de compras falso em 5 passos',
     content:
-      'Antes de pagar, confira: 1) o domínio exato e o certificado HTTPS; 2) o CNPJ no site da Receita e a data de abertura; 3) reclamações no Reclame Aqui e no consumidor.gov; 4) as formas de pagamento — loja séria não aceita só Pix; 5) a existência de CEP, telefone e política de troca. Preço muito abaixo do mercado é o sinal mais barato de ser falso.',
+      'Antes de pagar, confira: 1) o domínio exato e o certificado HTTPS; 2) o CNPJ no site da Receita e a data de abertura; 3) reclamações no Reclame Aqui e no consumidor.gov; 4) as formas de pagamento, porque loja séria não aceita só Pix; 5) a existência de CEP, telefone e política de troca. Preço muito abaixo do mercado é o sinal mais barato de ser falso.',
     bgUrl: 'https://picsum.photos/seed/securityon-article-1/1200/600',
   },
   {
@@ -146,7 +255,7 @@ const ARTICLES = [
     author: 'carla@securityon.dev',
     title: 'Pix caiu em golpe: o que fazer nas primeiras 24 horas',
     content:
-      'Abra imediatamente uma contestação pelo MED no app do banco — o prazo é curto e o dinheiro pode ainda estar na conta de destino. Registre boletim de ocorrência online, guarde prints da conversa, do comprovante e do anúncio. Depois, denuncie o perfil ou site usado. O MED não garante devolução, mas sem a contestação rápida a chance cai muito.',
+      'Abra imediatamente uma contestação pelo MED no app do banco, porque o prazo é curto e o dinheiro pode ainda estar na conta de destino. Registre boletim de ocorrência online, guarde prints da conversa, do comprovante e do anúncio. Depois, denuncie o perfil ou site usado. O MED não garante devolução, mas sem a contestação rápida a chance cai muito.',
     bgUrl: null,
   },
   {
@@ -205,7 +314,7 @@ async function main() {
   );
 
   console.log('Criando likes...');
-  // Cada post recebe likes de um subconjunto rotativo de usuários — nunca do autor,
+  // Cada post recebe likes de um subconjunto rotativo de usuários, nunca do autor,
   // e sem repetir par (userId, postId), que é unique.
   const likeData = posts.flatMap((post, postIndex) =>
     users
@@ -232,8 +341,9 @@ async function main() {
   await prisma.comment.createMany({ data: commentData });
 
   console.log('Criando denúncias...');
+  const allComplaints = [...COMPLAINTS, ...SAME_SITE_COMPLAINTS, LOOKALIKE_COMPLAINT];
   await Promise.all(
-    COMPLAINTS.map((complaint, index) =>
+    allComplaints.map((complaint, index) =>
       prisma.complaint.create({
         data: {
           title: complaint.title,
@@ -301,12 +411,13 @@ async function main() {
     posts: posts.length,
     likes: likeData.length,
     comments: commentData.length,
-    complaints: COMPLAINTS.length,
+    complaints: allComplaints.length,
     articles: ARTICLES.length,
     friendships: 5,
   };
   console.log('Seed concluído:', counts);
   console.log(`Login de teste: ana@securityon.dev / ${DEFAULT_PASSWORD}`);
+  console.log('Link para testar a verificação de site: promo-shopfacil.com (10 denúncias)');
 }
 
 main()

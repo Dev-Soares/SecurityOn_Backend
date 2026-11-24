@@ -15,7 +15,7 @@ const MULTI_LABEL_SUFFIXES = [
 const HOST_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 
 // Extrai o host de uma URL digitada à mão, sem protocolo, com caminho ou com porta.
-// Devolve null quando não há host reconhecível — a busca deve recusar, não chutar.
+// Devolve null quando não há host reconhecível, a busca deve recusar, não chutar.
 export const normalizeHost = (input: string | null | undefined): string | null => {
     if (!input) return null;
 
@@ -37,7 +37,7 @@ export const normalizeHost = (input: string | null | undefined): string | null =
     return HOST_PATTERN.test(host) ? host : null;
 };
 
-// Domínio registrável do host — "pagamento.loja.com.br" vira "loja.com.br".
+// Domínio registrável do host, "pagamento.loja.com.br" vira "loja.com.br".
 // É o termo do pré-filtro no banco: casa o host buscado, seus subdomínios e seu domínio pai.
 export const baseDomain = (host: string): string => {
     const labels = host.split('.');
@@ -51,6 +51,6 @@ export const baseDomain = (host: string): string => {
 // Dois hosts são o mesmo site denunciado quando são iguais ou um é subdomínio do outro.
 // Vale nos dois sentidos de propósito: quem cola "pagamento.loja.com" precisa ver a
 // denúncia feita contra "loja.com", e quem cola "loja.com" precisa ver a do subdomínio.
-// Compara rótulo a rótulo — "outraloja.com" não é subdomínio de "loja.com".
+// Compara rótulo a rótulo, "outraloja.com" não é subdomínio de "loja.com".
 export const isSameSite = (a: string, b: string): boolean =>
     a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
