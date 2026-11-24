@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, 
 import { ComplaintService } from './complaint.service';
 import { CreateComplaintDto } from './dto/create-complaint.dto';
 import { UpdateComplaintDto } from './dto/update-complaint.dto';
+import { SearchComplaintDto } from './dto/search-complaint.dto';
 import { AuthGuard } from 'src/common/guards/auth/auth.guard';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
 import type { AuthenticatedRequest } from 'src/common/types/req-types';
@@ -24,6 +25,13 @@ export class ComplaintController {
   @Get('all/:id')
   findByUser(@Query() query: PaginationDto, @Param('id') id: string) {
     return this.complaintService.findByUser(query, id);
+  }
+
+  // Antes de @Get(':id'): o Nest casa na ordem de declaração e 'search' cairia
+  // como id de denúncia.
+  @Get('search')
+  findByLink(@Query() query: SearchComplaintDto) {
+    return this.complaintService.findByLink(query);
   }
 
   @Get(':id')

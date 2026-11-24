@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  BadRequestException,
   InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
@@ -156,6 +157,100 @@ describe('ComplaintService', () => {
       prismaMock.complaint.findMany.mockRejectedValue(new Error('db down'));
 
       await expect(service.findByUser({}, userId)).rejects.toThrow(
+        InternalServerErrorException,
+      );
+    });
+  });
+
+  describe('findByLink', () => {
+    const withLink = (id: string, link: string | null) => ({
+      ...makeComplaint(id),
+      link,
+    });
+
+    it('normaliza a URL colada e pré-filtra pelo domínio registrável', async () => {
+      prismaMock.complaint.findMany.mockResolvedValue([]);
+
+      const result = await service.findByLink({
+        url: 'HTTPS://WWW.Loja-Falsa.com.br:443/produto/1?utm=x',
+      });
+
+      expect(prismaMock.complaint.findMany).toHaveBeenCalledWith({
+        take: 100,
+        orderBy: { createdAt: 'desc' },
+        where: { link: { contains: 'loja-falsa.com.br', mode: 'insensitive' } },
+      });
+      expect(result.domain).toBe('loja-falsa.com.br');
+      expect(result.found).toBe(false);
+      expect(result.total).toBe(0);
+      expect(result.data).toEqual([]);
+    });
+
+    it('casa a denúncia qualquer que seja a forma como o link foi digitado', async () => {
+      const salvas = [
+        withLink('c-1', 'www.loja.com/produto/1'),
+        withLink('c-2', 'http://LOJA.com'),
+        withLink('c-3', 'https://loja.com/'),
+      ];
+      prismaMock.complaint.findMany.mockResolvedValue(salvas);
+
+      const result = await service.findByLink({ url: 'loja.com' });
+
+      expect(result.found).toBe(true);
+      expect(result.total).toBe(3);
+    });
+
+    it('casa subdomínio e domínio pai nos dois sentidos', async () => {
+      prismaMock.complaint.findMany.mockResolvedValue([
+        withLink('c-1', 'https://loja.com'),
+        withLink('c-2', 'https://pagamento.loja.com'),
+      ]);
+
+      const result = await service.findByLink({ url: 'pagamento.loja.com' });
+
+      expect(result.total).toBe(2);
+    });
+
+    it('descarta host que só contém o domínio buscado como texto', async () => {
+      prismaMock.complaint.findMany.mockResolvedValue([
+        withLink('c-1', 'https://outraloja.com'),
+        withLink('c-2', 'https://loja.com.golpe.net'),
+        withLink('c-3', 'https://site.com/redirect?to=loja.com'),
+        withLink('c-4', 'https://loja.com/produto'),
+      ]);
+
+      const result = await service.findByLink({ url: 'https://loja.com' });
+
+      expect(result.total).toBe(1);
+      expect(result.data[0].id).toBe('c-4');
+    });
+
+    it('ignora denúncia sem link e link que não forma host', async () => {
+      prismaMock.complaint.findMany.mockResolvedValue([
+        withLink('c-1', null),
+        withLink('c-2', 'nao é url'),
+        withLink('c-3', 'https://loja.com'),
+      ]);
+
+      const result = await service.findByLink({ url: 'loja.com' });
+
+      expect(result.total).toBe(1);
+      expect(result.data[0].id).toBe('c-3');
+    });
+
+    it('rejeita endereço sem host reconhecível antes de ir ao banco', async () => {
+      for (const url of ['', '   ', 'loja', 'localhost', 'http://', '???']) {
+        await expect(service.findByLink({ url })).rejects.toThrow(
+          BadRequestException,
+        );
+      }
+      expect(prismaMock.complaint.findMany).not.toHaveBeenCalled();
+    });
+
+    it('lança InternalServerErrorException em falha do banco', async () => {
+      prismaMock.complaint.findMany.mockRejectedValue(new Error('db down'));
+
+      await expect(service.findByLink({ url: 'loja.com' })).rejects.toThrow(
         InternalServerErrorException,
       );
     });
